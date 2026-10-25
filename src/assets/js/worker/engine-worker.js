@@ -5,19 +5,20 @@ import { toErrorReply } from './errors.js';
 const VENDOR_URL = new URL('../../vendor/pdf-lib.esm.min.js', import.meta.url).href;
 
 // The op map: null prototype, own keys only, frozen once the engine has loaded. It is the worker's
-// only entry point and holds exactly these ops (images is added by its own story).
+// only entry point and holds exactly these ops.
 export const opMap = Object.create(null);
 let failed = false;
 
 // Loaded with import() inside try/catch so that a failed start is reported, not silent.
 const started = (async () => {
   try {
-    const [lib, inspect, merge] = await Promise.all([
-      import(VENDOR_URL), import('./ops/inspect.js'), import('./ops/merge.js'),
+    const [lib, inspect, merge, images] = await Promise.all([
+      import(VENDOR_URL), import('./ops/inspect.js'), import('./ops/merge.js'), import('./ops/images.js'),
     ]);
     if (typeof lib.PDFDocument?.create !== 'function') throw new Error('engine-missing');
     opMap.inspect = (m) => inspect.run(m, lib);
     opMap.merge = (m, progress) => merge.run(m, lib, progress);
+    opMap.images = (m, progress) => images.run(m, lib, progress, globalThis);
     opMap.ping = async () => ({ pages: 0 });
     Object.freeze(opMap);
     self.postMessage({ type: 'ready' });

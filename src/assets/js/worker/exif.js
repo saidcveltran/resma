@@ -9,7 +9,8 @@
 //
 // The engine's own decoders read more of a file than these head parsers do (decision 32), so the
 // parsers refuse what the engine would read differently:
-//   - JPEG: C8, CC and F0-FD segments before the frame header, and component counts other than 1, 3, 4.
+//   - JPEG: C8, CC and F0-FD segments before the frame header, component counts other than 1, 3, 4, and
+//     (SEC-8) fill bytes, TEM and RST markers before the frame header.
 //   - PNG: a second IHDR, APNG chunks (acTL, fcTL, fdAT) and CgBI, and chunk lengths past the file.
 // readPngInfo looks only inside the first 1 MiB. checkPngChunks walks the whole file; THE WORKER MUST
 // CALL IT ON EVERY PNG BEFORE ANY EMBED (it is the only check that covers chunks past 1 MiB).
@@ -104,11 +105,13 @@ export function readJpegInfo(input) {
     // Fill bytes: any run of 0xFF before the marker code.
     let at = pos + 1;
     while (at < limit && b[at] === 0xff) at += 1;
+    if (!frame && at > pos + 1) break; // SEC-8: fill bytes before the frame header; the engine's scan reads them as a length
     if (at >= limit) { pos = limit; break; }
     const marker = b[at];
     if (marker === 0x00 || marker === 0xd8) break; // a stuffed zero or a second SOI outside a scan
     if (marker === 0xd9) break; // EOI before any frame header
     if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { // markers with no length
+      if (!frame) break; // SEC-8: TEM and RST before the frame header; the engine's scan would read a length from them
       const next = nextOffset(pos, at + 1);
       if (next < 0) { pos = limit; break; }
       pos = next;
