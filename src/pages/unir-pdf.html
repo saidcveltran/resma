@@ -4,8 +4,15 @@
 {{partial:head}}
 </head>
 <body>
-<main>
+{{partial:noscript}}
+{{partial:header}}
+<main id="main" tabindex="-1">
+<div class="container">
 <h1>{{h1}}</h1>
+<p data-s="merge.lead"></p>
+{{partial:tool-area}}
+</div>
 </main>
+{{partial:footer}}
 </body>
 </html>

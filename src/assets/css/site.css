@@ -1,0 +1,13 @@
+/* Structure only (S-006). Colours, type and states come with the theme story; lengths use tokens. */
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
+main { flex: 1 0 auto; }
+.container { width: 100%; max-width: var(--size-content-wide); margin: 0 auto; padding: 0 var(--space-4); }
+.skip-link { position: absolute; left: var(--space-2); top: -100vh; }
+.skip-link:focus { top: var(--space-2); }
+.site-header .container { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
+.tool-nav { margin-left: auto; }
+.tool-nav ul { display: flex; flex-wrap: wrap; gap: var(--space-1); list-style: none; margin: 0; padding: 0; }
+.brand, .tool-nav a { display: inline-flex; align-items: center; min-height: var(--size-target-min); }
+.tool { margin: var(--space-6) 0; }
+.alert:empty, .status:empty { display: none; }
