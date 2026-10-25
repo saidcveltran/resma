@@ -15,6 +15,7 @@ import html
 import json
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -30,8 +31,14 @@ ANY_BRACES_RE = re.compile(r"\{\{.*?\}\}", re.S)
 DOLLAR_RE = re.compile(r"\$\{[^}]*\}?")
 SOURCEMAP_RE = re.compile(rb"\r?\n?//# sourceMappingURL=[^\r\n]*\s*\Z")
 SOURCEMAP_ANY_RE = re.compile(rb"^//# sourceMappingURL=", re.M)
-ROUTE_RE = re.compile(r"^/(?:[a-z0-9-]+/)*$")
-FORBIDDEN_OUTPUT = ("_worker.js", "_routes.json")
+ROUTE_RE = re.compile(r"/(?:[a-z0-9-]+/)*")  # always used with fullmatch
+SEGMENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+ROOT_FILE_RE = re.compile(r"/[A-Za-z0-9][A-Za-z0-9._-]*")
+BASE_URL_RE = re.compile(r"https://[a-z0-9.-]+")
+REPARSE_POINT = 0x400  # Windows FILE_ATTRIBUTE_REPARSE_POINT: symlinks, junctions, mount points
+STATIC_REFUSED = ("_redirects", "_headers")
+BUDGET_KEYS = ("css_gzip_kb", "js_gzip_kb", "engine_gzip_kb", "fonts_max_files", "fonts_total_kb",
+               "html_gzip_kb", "first_view_gzip_kb")
 
 EXIT_FAIL = 1
 EXIT_ENV = 2
@@ -66,10 +73,19 @@ def gzip_size(data):
     return len(gzip.compress(data, compresslevel=9, mtime=0))
 
 
+def describe_oserror(exc):
+    """A message for an OSError that never contains an absolute path or a traceback."""
+    name = Path(str(exc.filename)).name if getattr(exc, "filename", None) else ""
+    reason = exc.strerror or type(exc).__name__
+    return f"{reason} ({name})" if name else reason
+
+
 def read_json(path, what):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+    except OSError as exc:
+        raise BuildError(f"cannot read {what} ({path.name}): {describe_oserror(exc)}", EXIT_ENV)
+    except ValueError as exc:
         raise BuildError(f"cannot read {what} ({path.name}): {exc}", EXIT_ENV)
 
 
@@ -86,7 +102,7 @@ def check_environment(root, site):
     try:
         out = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=30).stdout.strip()
     except (OSError, subprocess.SubprocessError) as exc:
-        raise BuildError(f"environment check failed: node --version: {exc}", EXIT_ENV)
+        raise BuildError(f"environment check failed: node --version: {type(exc).__name__}", EXIT_ENV)
     m = re.fullmatch(r"v(\d+)\.\d+\.\d+", out)
     if not m:
         raise BuildError(f"environment check failed: unexpected node version {out!r}", EXIT_ENV)
@@ -117,7 +133,7 @@ def load_vendor(root):
     try:
         upstream = path.read_bytes()
     except OSError as exc:
-        raise BuildError(f"vendor hash mismatch: cannot read {vendor['path']}: {exc}")
+        raise BuildError(f"vendor hash mismatch: cannot read {vendor['path']}: {describe_oserror(exc)}")
     if sha256(upstream) != vendor["sha256"]:
         raise BuildError(f"vendor hash mismatch: {vendor['path']} is {sha256(upstream)}, "
                          f"vendor.json upstream sha256 is {vendor['sha256']}")
@@ -132,17 +148,40 @@ def load_vendor(root):
 
 def load_site(root):
     site = read_json(root / "site.json", "site.json")
+    if not isinstance(site, dict):
+        raise BuildError("site.json must be a JSON object", EXIT_ENV)
     for key in ("base_url", "version", "routes", "budget"):
         if key not in site:
             raise BuildError(f"site.json lacks {key}", EXIT_ENV)
-    if not re.fullmatch(r"https://[a-z0-9.-]+", site["base_url"]):
+    for key in ("base_url", "version"):
+        if not isinstance(site[key], str):
+            raise BuildError(f"site.json field {key} must be a string", EXIT_ENV)
+    if not isinstance(site["routes"], list):
+        raise BuildError("site.json field routes must be a list", EXIT_ENV)
+    if not isinstance(site["budget"], dict):
+        raise BuildError("site.json field budget must be an object", EXIT_ENV)
+    for key in BUDGET_KEYS:
+        v = site["budget"].get(key)
+        if not isinstance(v, int) or isinstance(v, bool):
+            raise BuildError(f"site.json field budget.{key} must be an integer", EXIT_ENV)
+    vf = site.get("verification_files", [])
+    if not isinstance(vf, list) or not all(isinstance(x, str) for x in vf):
+        raise BuildError("site.json field verification_files must be a list of strings", EXIT_ENV)
+    if not BASE_URL_RE.fullmatch(site["base_url"]):
         raise BuildError("site.json base_url must be an https origin without a path", EXIT_ENV)
     seen = set()
-    for r in site["routes"]:
+    for i, r in enumerate(site["routes"]):
+        if not isinstance(r, dict):
+            raise BuildError(f"site.json routes[{i}] must be an object", EXIT_ENV)
         for key in ("path", "page", "title", "description", "h1", "in_sitemap", "cache"):
             if key not in r:
                 raise BuildError(f"site.json route {r.get('path', '?')} lacks {key}", EXIT_ENV)
-        if not ROUTE_RE.match(r["path"]):
+        for key in ("path", "page", "title", "description", "h1", "cache"):
+            if not isinstance(r[key], str):
+                raise BuildError(f"site.json field routes[{i}].{key} must be a string", EXIT_ENV)
+        if not isinstance(r["in_sitemap"], bool):
+            raise BuildError(f"site.json field routes[{i}].in_sitemap must be a boolean", EXIT_ENV)
+        if not ROUTE_RE.fullmatch(r["path"]):
             raise BuildError(f"site.json route path {r['path']!r} is not a clean /segment/ path", EXIT_ENV)
         if r["path"] in seen:
             raise BuildError(f"site.json route {r['path']} is duplicated", EXIT_ENV)
@@ -157,7 +196,10 @@ def load_site(root):
 # ---------------------------------------------------------------- rendering (no evaluation)
 
 def read_text(path):
-    return path.read_bytes().decode("utf-8").replace("\r\n", "\n")
+    try:
+        return path.read_bytes().decode("utf-8").replace("\r\n", "\n")
+    except UnicodeDecodeError:
+        raise BuildError(f"{path.name} is not valid UTF-8")
 
 
 TOKEN_RE = re.compile(r"\{\{(?:partial:([a-z0-9-]+)|([a-z0-9_]+))\}\}")
@@ -216,6 +258,18 @@ def generate_headers(base_url, routes, root_files):
     rule("https://:project.pages.dev/*", ["X-Robots-Tag: noindex"])
     rule("https://:version.:project.pages.dev/*", ["X-Robots-Tag: noindex"])
 
+    fixed = {"/*", f"{base_url}/*", "/assets/*", "https://:project.pages.dev/*",
+             "https://:version.:project.pages.dev/*"}
+    seen = set()
+    for pattern, lines in rules:
+        if not (pattern in fixed or ROUTE_RE.fullmatch(pattern) or ROOT_FILE_RE.fullmatch(pattern)):
+            raise BuildError(f"_headers rule pattern {pattern!r} is not an allowed pattern")
+        if pattern in seen:
+            raise BuildError(f"_headers rule pattern {pattern!r} appears twice")
+        seen.add(pattern)
+        for text in [pattern] + lines:
+            if "\n" in text or "\r" in text or "\t" in text:
+                raise BuildError(f"_headers rule {pattern!r} contains a control character")
     if len(rules) > MAX_RULES:
         raise BuildError(f"_headers has {len(rules)} rules, the Pages limit is {MAX_RULES}")
     out = []
@@ -245,13 +299,55 @@ def build_id_of(assets, vendor):
     return h.hexdigest()[:12]
 
 
-def collect(directory):
+def is_link(path):
+    """True for a symlink, a junction or any other reparse point (lstat: never follows)."""
+    st = path.lstat()
+    return stat.S_ISLNK(st.st_mode) or bool(getattr(st, "st_file_attributes", 0) & REPARSE_POINT)
+
+
+def ensure_plain(path, base, label):
+    """Refuse a link at path or at any parent up to base, and a path that resolves outside base."""
+    cur = path
+    while True:
+        if is_link(cur):
+            raise BuildError(f"{label}: a symlink or junction is not allowed")
+        if cur == base or cur.parent == cur:
+            break
+        cur = cur.parent
+    if not path.resolve().is_relative_to(base.resolve()):
+        raise BuildError(f"{label}: resolves outside the folder being collected")
+
+
+def collect(directory, root, label, names=False):
+    """Read every regular file under directory (relative posix path -> bytes), refusing links."""
     files = {}
-    if directory.is_dir():
-        for p in sorted(directory.rglob("*")):
-            if p.is_file():
-                files[p.relative_to(directory).as_posix()] = p.read_bytes()
+    try:
+        directory.lstat()
+    except FileNotFoundError:
+        return files
+    ensure_plain(directory, root, label)
+    if not directory.is_dir():
+        return files
+    for p in sorted(directory.rglob("*")):
+        rel = p.relative_to(directory).as_posix()
+        ensure_plain(p, directory, f"{label}/{rel}")
+        if names:
+            for seg in rel.split("/"):
+                if not SEGMENT_RE.fullmatch(seg):
+                    raise BuildError(f"{label}/{rel}: path segment {seg!r} is not allowed "
+                                     f"(use [A-Za-z0-9][A-Za-z0-9._-]*)")
+        if p.is_file():
+            files[rel] = p.read_bytes()
     return files
+
+
+def check_output_paths(files):
+    """SA-12 over every output path: no source map, worker, routes file or functions folder."""
+    for rel in files:
+        parts = rel.lower().split("/")
+        if (parts[-1].endswith(".map") or "_worker.js" in parts or parts == ["_routes.json"]
+                or parts[0] == "functions"):
+            raise BuildError(f"{rel} must not be shipped (SA-12)")
 
 
 def check_budget(site, files, assets_prefix, pages):
@@ -295,7 +391,7 @@ def build(root):
     check_environment(root, site)
     vendor = load_vendor(root)
 
-    assets = collect(root / "src" / "assets")
+    assets = collect(root / "src" / "assets", root, "src/assets")
     build_id = build_id_of(assets, vendor)
     assets_prefix = f"assets/{build_id}/"
 
@@ -307,7 +403,9 @@ def build(root):
     partials = {}
     pdir = root / "src" / "partials"
     if pdir.is_dir():
+        ensure_plain(pdir, root, "src/partials")
         for p in sorted(pdir.glob("*.html")):
+            ensure_plain(p, pdir, f"src/partials/{p.name}")
             partials[p.stem] = read_text(p)
     for name, text in partials.items():
         validate(text, f"partial {name}", partials, False)
@@ -317,6 +415,7 @@ def build(root):
         src = root / "src" / "pages" / f"{r['page']}.html"
         if not src.is_file():
             raise BuildError(f"route {r['path']}: missing src/pages/{r['page']}.html")
+        ensure_plain(src, root / "src", f"src/pages/{r['page']}.html")
         values = {
             "base_url": site["base_url"], "version": site["version"], "build_id": build_id,
             "assets_path": "/" + assets_prefix.rstrip("/"), "route": r["path"],
@@ -328,12 +427,11 @@ def build(root):
         files[rel] = out.encode("utf-8")
         pages.append(rel)
 
-    static = collect(root / "static")
+    static = collect(root / "static", root, "static", names=True)
     root_files = []
     for rel, data in static.items():
-        base = rel.rsplit("/", 1)[-1]
-        if base.endswith(".map") or base in FORBIDDEN_OUTPUT or rel.split("/")[0] == "functions":
-            raise BuildError(f"static/{rel} must not be shipped (SA-12)")
+        if rel.lower() in STATIC_REFUSED:
+            raise BuildError(f"static/{rel} is not allowed: it is generated or not part of the Design")
         files[rel] = data
         if "/" not in rel:
             root_files.append("/" + rel)
@@ -351,6 +449,7 @@ def build(root):
         if name not in static:
             raise BuildError(f"site.json verification file {name} is not in static/")
 
+    check_output_paths(files)
     headers = generate_headers(site["base_url"], [r["path"] for r in site["routes"]], sorted(root_files))
     files["_headers"] = headers.encode("utf-8")
 
@@ -365,23 +464,53 @@ def build(root):
     return build_id, files, report
 
 
+def remove_tree(path, root):
+    """Remove a build directory (dist or dist.tmp) that sits directly in root; links are unlinked."""
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    if path.parent.resolve() != root.resolve():
+        raise BuildError(f"refusing to clear {path.name} outside the repository", EXIT_ENV)
+    if is_link(path):
+        try:
+            path.unlink()
+        except OSError:
+            path.rmdir()
+        return
+    shutil.rmtree(path)
+
+
 def write_dist(root, files):
-    dist = root / "dist"
-    if dist.exists():
-        if dist.resolve().parent != root.resolve():
-            raise BuildError("refusing to clear a dist path outside the repository", EXIT_ENV)
-        shutil.rmtree(dist)
+    """Write everything into dist.tmp/, then swap it in for dist/ only after every file is written."""
+    dist, tmp = root / "dist", root / "dist.tmp"
+    remove_tree(tmp, root)
     for rel, data in files.items():
-        target = dist / rel
+        target = tmp / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
+    remove_tree(dist, root)
+    tmp.rename(dist)
+
+
+def clean_failed(root):
+    """After a failure: no dist.tmp/ and no stale dist/ may remain."""
+    for name in ("dist.tmp", "dist"):
+        try:
+            remove_tree(root / name, root)
+        except (OSError, BuildError):
+            print(f"build failed: could not remove {name}/; delete it before deploying", file=sys.stderr)
 
 
 def main():
     try:
-        build_id, files, report = build(ROOT)
-        write_dist(ROOT, files)
+        try:
+            build_id, files, report = build(ROOT)
+            write_dist(ROOT, files)
+        except OSError as exc:
+            raise BuildError(f"file system error: {describe_oserror(exc)}")
     except BuildError as exc:
+        clean_failed(ROOT)
         print(f"build failed: {exc}", file=sys.stderr)
         return exc.code
     for line in report:
