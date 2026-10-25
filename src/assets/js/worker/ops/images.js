@@ -1,8 +1,11 @@
 // Op `images`: turn JPG and PNG files into one PDF, one page per image, in the order given.
 //
 // What the op guarantees (DESIGN 6.5, CS-5, CS-6, decisions 32 and 33):
-//   - JPEG: the head parser vets the file, APP1 (Exif, XMP) and APP13 (IPTC) are cut out byte-wise, and
-//     the bytes go to embedJpg without re-encoding. APP0, APP2 (ICC) and APP14 (Adobe) stay.
+//   - JPEG: the head parser vets the file, then the bytes are cut byte-wise and go to embedJpg without
+//     re-encoding. Only JFIF (APP0), ICC_PROFILE (APP2) and Adobe (APP14) segments stay; every other APPn
+//     and COM is dropped (Exif, XMP, IPTC, C2PA, MPF, thumbnails), and so is everything after the image's
+//     first end-of-image marker (motion-photo video, extra images). A metadata segment that runs past the
+//     end of the file is DAMAGED.
 //   - PNG: the file is walked chunk by chunk, rebuilt from IHDR, PLTE, tRNS, the IDAT chunks and IEND only,
 //     and its IDAT stream is inflated here, with an output cap taken from the header, BEFORE the library
 //     or the canvas sees it. A stream that inflates past the cap (a decompression bomb) is DAMAGED.
@@ -30,33 +33,53 @@ const typeAt = (b, at) => String.fromCharCode(b[at], b[at + 1], b[at + 2], b[at 
 
 // ------------------------------------------------------------------ JPEG
 
-// Removes every APP1 (Exif, XMP) and APP13 (IPTC) segment, wherever it sits, and copies everything else
-// as it is. A segment is 0xFF, a marker, a length that counts its own two bytes, and the payload; inside
-// the compressed data every 0xFF is followed by a zero or a restart marker, so a marker with a length is
-// always a real segment. Each pass moves forward, so the cost is bounded by the file length.
+// Cuts a JPEG down to its picture: keeps the image segments and the three APP segments that describe how to
+// show it (APP0 JFIF, APP2 ICC_PROFILE, APP14 Adobe), drops every other APPn and COM wherever it sits, and
+// ends the output at the first EOI that follows the first SOS. A segment is 0xFF, a marker, a length that
+// counts its own two bytes, and the payload; inside the compressed data every 0xFF is followed by a zero or
+// a restart marker, so a marker with a length is always a real segment and the first EOI marker is the end of
+// the image. An APPn or COM whose length runs past the end of the file is DAMAGED. Each pass moves forward,
+// so the cost is bounded by the file length.
+const KEEP_APP = new Map([
+  [0xe0, Uint8Array.from([0x4a, 0x46, 0x49, 0x46, 0x00])], // JFIF\0
+  [0xe2, Uint8Array.from([0x49, 0x43, 0x43, 0x5f, 0x50, 0x52, 0x4f, 0x46, 0x49, 0x4c, 0x45, 0x00])], // ICC_PROFILE\0
+  [0xee, Uint8Array.from([0x41, 0x64, 0x6f, 0x62, 0x65])], // Adobe
+]);
+const startsWith = (b, at, prefix) => at + prefix.length <= b.length && prefix.every((v, k) => b[at + k] === v);
+
 export function stripJpegMetadata(b) {
   const len = b.length;
   const kept = [];
   let from = 0;
+  let end = len;
+  let sawScan = false;
   let i = 2;
   while (i < len) {
     if (b[i] !== 0xff) { i += 1; continue; }
     let j = i + 1;
     while (j < len && b[j] === 0xff) j += 1; // fill bytes
-    if (j + 2 >= len) break; // no room for a marker and its length
+    if (j + 2 >= len && !(sawScan && b[j] === 0xd9)) break; // no room for a marker and its length
     const marker = b[j];
+    if (marker === 0xd9 && sawScan) { end = j + 1; break; } // the end of the image: nothing after it is kept
     if (marker === 0x00 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) { i = j + 1; continue; }
     const size = (b[j + 1] << 8) | b[j + 2];
-    if (size < 2 || j + 1 + size > len) { i = j + 1; continue; }
-    const end = j + 1 + size;
-    if (marker === 0xe1 || marker === 0xed) {
-      kept.push(b.subarray(from, i));
-      from = end;
+    const isApp = (marker >= 0xe0 && marker <= 0xef) || marker === 0xfe;
+    if (size < 2) { i = j + 1; continue; }
+    if (j + 1 + size > len) {
+      if (isApp) throw new EngineError('DAMAGED'); // a metadata segment that runs past the end of the file
+      i = j + 1;
+      continue;
     }
-    i = end;
+    const segmentEnd = j + 1 + size;
+    if (marker === 0xda) sawScan = true;
+    if (isApp && !(KEEP_APP.has(marker) && startsWith(b, j + 3, KEEP_APP.get(marker)))) {
+      kept.push(b.subarray(from, i));
+      from = segmentEnd;
+    }
+    i = segmentEnd;
   }
-  if (kept.length === 0) return b;
-  kept.push(b.subarray(from));
+  if (kept.length === 0) return end === len ? b : b.subarray(0, end);
+  kept.push(b.subarray(from, end));
   const out = new Uint8Array(kept.reduce((n, p) => n + p.length, 0));
   let at = 0;
   for (const p of kept) { out.set(p, at); at += p.length; }
@@ -101,25 +124,35 @@ export function expectedRawSize({ width, height, bitDepth, colorType, interlaced
   return total;
 }
 
-// Inflates a zlib stream given in pieces and only counts the output; nothing is kept. The count is
-// checked on every chunk the decompressor produces and the stream is cancelled the moment it passes the
-// cap, so the work and the memory are bounded by the cap plus one chunk, not by the stream.
-// DecompressionStream is native in workers (and in Node), so no code is added to the engine.
-// Returns { ok, size, over }: ok means the stream ended cleanly inside the cap.
-export async function inflateCapped(parts, cap) {
+// The most compressed bytes handed to the decompressor in one write. Browsers inflate the whole output of a
+// write into memory before the reader can count it (up to 1,032 times the input, the deflate limit), so the
+// slice, not the file, sets the memory of one step: about 1,032 x 16 KiB = 16 MiB.
+export const INFLATE_SLICE_BYTES = 16 * 1024;
+
+// Inflates a zlib stream and only counts the output; nothing is kept. The stream is written in slices of at
+// most INFLATE_SLICE_BYTES, whatever the PNG's chunking was, the count is checked on every chunk the
+// decompressor produces, and writing stops and the stream is cancelled the moment the count passes the cap.
+// So the work is bounded by the cap plus one slice's output, and the memory of one step by about 1,032 times
+// the slice size, not by the stream. DecompressionStream is native in workers (and in Node), so no code is
+// added to the engine. `bytes` is one Uint8Array. Returns { ok, size, over }: ok means the stream ended
+// cleanly inside the cap.
+export async function inflateCapped(bytes, cap) {
   if (typeof DecompressionStream !== 'function') throw new EngineError('INTERNAL');
   const stream = new DecompressionStream('deflate');
   const writer = stream.writable.getWriter();
   const reader = stream.readable.getReader();
-  const feed = (async () => {
-    try {
-      for (const part of parts) await writer.write(part);
-      await writer.close();
-    } catch { /* the reader reports the failure, or the cancel below ended the stream */ }
-  })();
   let size = 0;
   let over = false;
   let ok = false;
+  let stop = false;
+  const feed = (async () => {
+    try {
+      for (let at = 0; at < bytes.length && !stop; at += INFLATE_SLICE_BYTES) {
+        await writer.write(bytes.subarray(at, at + INFLATE_SLICE_BYTES));
+      }
+      if (!stop) await writer.close();
+    } catch { /* the reader reports the failure, or the cancel below ended the stream */ }
+  })();
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -130,6 +163,7 @@ export async function inflateCapped(parts, cap) {
   } catch {
     ok = false; // corrupt, truncated or trailing data
   }
+  stop = true;
   if (over || !ok) {
     try { await reader.cancel(); } catch { /* already closed */ }
     try { await writer.abort(); } catch { /* already closed */ }
@@ -153,7 +187,8 @@ export async function preparePng(b) {
   let ihdr = null;
   let plte = null;
   let trns = null;
-  const idat = [];
+  let idatStart = -1; // the IDAT chunks are one run of the file, from idatStart to idatEnd
+  let idatEnd = -1;
   let idatEnded = false;
   let at = 8;
   while (at + 12 <= b.length) {
@@ -163,16 +198,17 @@ export async function preparePng(b) {
       ihdr = chunkBytes(b, at, size);
     } else if (type === 'IDAT') {
       if (idatEnded) throw new EngineError('DAMAGED'); // image data split by another chunk
-      idat.push(chunkBytes(b, at, size));
+      if (idatStart < 0) idatStart = at;
+      idatEnd = at + 12 + size;
     } else {
-      if (idat.length > 0) idatEnded = true;
-      if (idat.length === 0 && type === 'PLTE' && indexed && plte === null) plte = chunkBytes(b, at, size);
-      else if (idat.length === 0 && type === 'tRNS' && trns === null) trns = chunkBytes(b, at, size);
+      if (idatStart >= 0) idatEnded = true;
+      if (idatStart < 0 && type === 'PLTE' && indexed && plte === null) plte = chunkBytes(b, at, size);
+      else if (idatStart < 0 && type === 'tRNS' && trns === null) trns = chunkBytes(b, at, size);
     }
     if (type === 'IEND') break;
     at += 12 + size;
   }
-  if (ihdr === null || idat.length === 0) throw new EngineError('DAMAGED');
+  if (ihdr === null || idatStart < 0) throw new EngineError('DAMAGED');
   if (indexed) {
     const entries = plte === null ? 0 : (plte.length - 12) / 3;
     if (plte === null || !Number.isInteger(entries) || entries < 1 || entries > 2 ** info.bitDepth) throw new EngineError('DAMAGED');
@@ -183,12 +219,20 @@ export async function preparePng(b) {
     if (want === -1) trns = null;
     else if (trns.length - 12 !== want) throw new EngineError('DAMAGED');
   }
-  // The image data: inflated here, once, against the cap taken from the header.
-  const parts = idat.map((c) => c.subarray(8, c.length - 4));
+  // The image data: the IDAT payloads are copied once into one buffer (never larger than the file), so the
+  // decompressor sees slices of INFLATE_SLICE_BYTES whatever the chunking, and inflated here, once, against
+  // the cap taken from the header.
+  const joined = new Uint8Array(Math.min(idatEnd, b.length) - idatStart);
+  let used = 0;
+  for (let p = idatStart; p < idatEnd; p += 12 + u32(b, p)) {
+    const payload = b.subarray(p + 8, p + 8 + u32(b, p));
+    joined.set(payload, used);
+    used += payload.length;
+  }
   const cap = expectedRawSize(info);
-  const inflated = await inflateCapped(parts, cap);
+  const inflated = await inflateCapped(joined.subarray(0, used), cap);
   if (!inflated.ok || inflated.size !== cap) throw new EngineError('DAMAGED');
-  const list = [Uint8Array.from(PNG_SIGNATURE), ihdr, ...(plte ? [plte] : []), ...(trns ? [trns] : []), ...idat, IEND_CHUNK];
+  const list = [Uint8Array.from(PNG_SIGNATURE), ihdr, ...(plte ? [plte] : []), ...(trns ? [trns] : []), b.subarray(idatStart, idatEnd), IEND_CHUNK];
   const out = new Uint8Array(list.reduce((n, p) => n + p.length, 0));
   let pos = 0;
   for (const p of list) { out.set(p, pos); pos += p.length; }
