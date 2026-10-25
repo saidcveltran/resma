@@ -4,6 +4,8 @@ import { EngineError } from '../errors.js';
 
 const EOF_WINDOW = 1024; // the end-of-file marker must sit in the last 1,024 bytes
 const KNOWN_FILTERS = new Set(['Standard']);
+// Public-key (certificate) handlers: a file locked this way needs a key we do not have.
+const CERTIFICATE_FILTERS = new Set(['Adobe.PubSec', 'Adobe.PPKLite', 'Adobe.PPKMS', 'Entrust.PPKEF']);
 const EOF_MARKER = [0x25, 0x25, 0x45, 0x4f, 0x46]; // %%EOF
 
 export function hasEofMarker(bytes) {
@@ -16,6 +18,21 @@ export function hasEofMarker(bytes) {
     if (hit) return true;
   }
   return false;
+}
+
+function hasBytes(bytes, needle) {
+  const first = needle.charCodeAt(0);
+  outer: for (let i = bytes.indexOf(first); i !== -1 && i <= bytes.length - needle.length; i = bytes.indexOf(first, i + 1)) {
+    for (let j = 1; j < needle.length; j++) if (bytes[i + j] !== needle.charCodeAt(j)) continue outer;
+    return true;
+  }
+  return false;
+}
+
+// The library cannot open public-key encryption and fails with a generic error; the handler's name sits
+// in the clear in the /Encrypt dictionary (which is never inside an object stream).
+function isCertificateLocked(bytes) {
+  return hasBytes(bytes, '/Encrypt') && [...CERTIFICATE_FILTERS].some((name) => hasBytes(bytes, `/${name}`));
 }
 
 // Validates the message shape (boundary B2) and returns the files as [{index, bytes: Uint8Array}].
@@ -42,6 +59,7 @@ export async function loadPdf(lib, bytes, index) {
     if (err instanceof RangeError) throw new EngineError('TOO_LARGE', index);
     const text = err && typeof err.message === 'string' ? err.message : '';
     if (/NEEDS PASSWORD|Password incorrect|is encrypted/i.test(text)) throw new EngineError('PROTECTED', index);
+    if (isCertificateLocked(bytes)) throw new EngineError('PROTECTED', index);
     throw new EngineError('DAMAGED', index);
   }
   try {
@@ -51,8 +69,9 @@ export async function loadPdf(lib, bytes, index) {
     if (encrypt !== undefined) {
       const dict = doc.context.lookup(encrypt);
       const filter = dict instanceof PDFDict ? dict.lookup(PDFName.of('Filter')) : undefined;
-      const known = filter instanceof PDFName && KNOWN_FILTERS.has(filter.decodeText());
-      if (!known) throw new EngineError('DAMAGED', index);
+      const name = filter instanceof PDFName ? filter.decodeText() : '';
+      if (CERTIFICATE_FILTERS.has(name)) throw new EngineError('PROTECTED', index);
+      if (!KNOWN_FILTERS.has(name)) throw new EngineError('DAMAGED', index);
     }
     // The page tree's own count must equal the pages the recovery found.
     const root = doc.catalog.lookup(PDFName.of('Pages'), PDFDict);
