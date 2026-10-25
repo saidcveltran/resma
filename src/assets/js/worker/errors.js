@@ -3,12 +3,17 @@ export const CODES = Object.freeze([
   'WRONG_TYPE', 'PROTECTED', 'DAMAGED', 'TOO_LARGE', 'IMAGE_TOO_BIG', 'IMAGE_UNSUPPORTED', 'INTERNAL',
 ]);
 
+// Any value that is not exactly one of the codes above is INTERNAL (never looked up by name).
+export const safeCode = (code) => (typeof code === 'string' && CODES.includes(code) ? code : 'INTERNAL');
+// A file index is a non-negative integer or nothing.
+export const safeIndex = (index) => (Number.isSafeInteger(index) && index >= 0 ? index : undefined);
+
 export class EngineError extends Error {
   constructor(code, index) {
     super(code);
     this.name = 'EngineError';
-    this.code = CODES.includes(code) ? code : 'INTERNAL';
-    if (Number.isSafeInteger(index)) this.index = index;
+    this.code = safeCode(code);
+    if (safeIndex(index) !== undefined) this.index = index;
   }
 }
 

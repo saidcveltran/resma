@@ -16,11 +16,22 @@ function markCurrentTool() {
   }
 }
 
+// After the engine has been ready once, a restart (a recycle) must not write over a message the tool put
+// in the status region (a result, a count): the line is rewritten only while the region still holds the
+// engine's own last line or nothing. The failed line always shows, because the visitor must see it.
+let wasReady = false;
+let lastLine = '';
+
 function showEngineState(status, retry, state) {
   const key = STATE_KEY[state];
   if (!key) return;
   root.dataset.engine = state;
-  status.textContent = t(key);
+  const own = status.textContent === '' || status.textContent === lastLine;
+  if (state === 'failed' || !wasReady || own) {
+    lastLine = t(key);
+    status.textContent = lastLine;
+  }
+  if (state === 'ready') wasReady = true;
   if (retry) retry.hidden = state !== 'failed';
 }
 

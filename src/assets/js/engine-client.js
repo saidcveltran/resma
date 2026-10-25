@@ -1,5 +1,6 @@
 // C6 engine client: owns the single warm worker, created through the Trusted Types policy (CS-1).
 import { WORKER_URL, POLICY_NAME, WATCHDOG_MS, START_TIMEOUT_MS } from './config.js';
+import { safeCode, safeIndex } from './worker/errors.js';
 
 // SEC-2: module scope; exact compare against the constant; returns the constant, never the input.
 // No createHTML and no createScript. Without Trusted Types, spawn() uses the plain constant.
@@ -20,12 +21,17 @@ function createPolicy() {
 }
 const policy = createPolicy();
 
+// The code is always one of the fixed list (anything else is INTERNAL), so a message from the worker can
+// never pick an arbitrary text key (S-006 SEC-3). `crash` marks a job lost because the worker itself
+// failed (an error event, an unreadable message or a restart), as opposed to an answer it sent.
 export class EngineError extends Error {
-  constructor(code, index) {
-    super(code);
+  constructor(code, index, crash = false) {
+    super(safeCode(code));
     this.name = 'EngineError';
-    this.code = code;
-    if (index !== undefined) this.index = index;
+    this.code = safeCode(code);
+    const at = safeIndex(index);
+    if (at !== undefined) this.index = at;
+    if (crash) this.crash = true;
   }
 }
 
@@ -63,8 +69,8 @@ function createEngine() {
     fn(p);
   }
 
-  function rejectAll(code) {
-    for (const id of [...pending.keys()]) settle(id, (p) => p.reject(new EngineError(code)));
+  function rejectAll(code, crash = false) {
+    for (const id of [...pending.keys()]) settle(id, (p) => p.reject(new EngineError(code, undefined, crash)));
   }
 
   function arm(id) {
@@ -79,7 +85,7 @@ function createEngine() {
 
   // The worker crashed or is stuck: fail the open calls, drop it and bring up a fresh one.
   function recycle() {
-    rejectAll('INTERNAL');
+    rejectAll('INTERNAL', true);
     dropWorker();
     spawn();
   }
@@ -128,7 +134,10 @@ function createEngine() {
       } else if (m.type === 'result') {
         settle(m.id, (p) => p.resolve(m));
       } else if (m.type === 'error') {
+        const known = pending.has(m.id);
         settle(m.id, (p) => p.reject(new EngineError(m.code, m.index)));
+        // Out of memory inside the worker: bring up a clean one (DESIGN 6.7), the list is untouched.
+        if (known && m.code === 'TOO_LARGE') recycle();
       }
     };
     const broken = () => {

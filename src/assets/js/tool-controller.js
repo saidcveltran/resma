@@ -124,7 +124,11 @@ export function createTool(def, root = document) {
       for (const entry of added) {
         if (list.get(entry.id)) await inspectEntry(entry);
       }
-      if (added.some((e) => list.get(e.id))) status.info(t('status.added', { count: added.length }));
+      if (!added.some((e) => list.get(e.id))) return;
+      // A large total gets its non-blocking warning as soon as the files are in, in the same message.
+      const total = list.entries().reduce((n, e) => n + e.size, 0);
+      const note = t('status.added', { count: added.length });
+      status.info(total > LARGE_INPUT_BYTES ? `${note} ${t('status.largeWarning', { size: formatSize(total) })}` : note);
     });
   }
 
@@ -256,7 +260,11 @@ export function createTool(def, root = document) {
     } catch (err) {
       if (stale()) return;
       setBusy(false);
-      const code = err instanceof EngineError ? err.code : 'INTERNAL';
+      // A worker that crashed or was restarted during the job is the "too large for this device" class
+      // (DESIGN 6.7); an answer the worker sent keeps its own code.
+      const crashed = err instanceof EngineError && err.crash === true;
+      const code = crashed ? 'TOO_LARGE' : err instanceof EngineError ? err.code : 'INTERNAL';
+      status.info(''); // the "Procesando…" line of the lost job must not stay on screen
       const entry = err instanceof EngineError && Number.isInteger(err.index) ? entries[err.index] : undefined;
       if (entry && FILE_ERRORS.has(code)) {
         list.update(entry.id, { status: 'error', errorCode: errorKey(def, code) });
