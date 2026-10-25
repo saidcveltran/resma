@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="112.24 103.05 775.52 775.52" width="775.52" height="775.52">
+<title>AIskaron</title>
+<defs><linearGradient id="mf" gradientUnits="userSpaceOnUse" x1="330" y1="150" x2="700" y2="900"><stop offset="0" stop-color="#1636B5"/><stop offset=".52" stop-color="#0AB8D8"/><stop offset="1" stop-color="#00E58C"/></linearGradient><linearGradient id="mb" gradientUnits="userSpaceOnUse" x1="0" y1="560" x2="0" y2="860"><stop offset="0" stop-color="#1A3FC4"/><stop offset="1" stop-color="#0C5FB8"/></linearGradient><mask id="mm" maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="1000"><rect width="1000" height="1000" fill="#fff"/><circle cx="500" cy="640" r="74" fill="#000"/></mask><clipPath id="mk"><path d="M861.58 738.42L500 549.77L138.42 738.42L257.77 856.62L500 730.23L742.23 856.62Z"/></clipPath><linearGradient id="msr" gradientUnits="userSpaceOnUse" x1="742.23" y1="856.62" x2="682.35" y2="887.13"><stop offset="0" stop-color="#06123F" stop-opacity=".55"/><stop offset="1" stop-color="#06123F" stop-opacity="0"/></linearGradient><linearGradient id="msl" gradientUnits="userSpaceOnUse" x1="257.77" y1="856.62" x2="317.65" y2="887.13"><stop offset="0" stop-color="#06123F" stop-opacity=".55"/><stop offset="1" stop-color="#06123F" stop-opacity="0"/></linearGradient></defs>
+<g mask="url(#mm)">
+<path fill="url(#mb)" d="M861.58 738.42L500 549.77L138.42 738.42L257.77 856.62L500 730.23L742.23 856.62Z"/>
+<g clip-path="url(#mk)"><path fill="url(#msr)" d="M923.83 1213.02L-165.75 -925.39L-225.63 -894.89L863.95 1243.53Z"/><path fill="url(#msl)" d="M76.17 1213.02L1165.75 -925.39L1225.63 -894.89L136.05 1243.53Z"/></g>
+<path fill="url(#mf)" d="M138.42 738.42L428.72 168.68A80 80 0 0 1 571.28 168.68L861.58 738.42L742.23 856.62L500 381.22L257.77 856.62Z"/>
+</g>
+<circle cx="500" cy="640" r="54" fill="#F6F8FA"/>
+</svg>

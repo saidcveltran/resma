@@ -204,7 +204,7 @@ function matchBrace(s, i) {
 }
 
 function parseOptions(s) {
-  const opts = {};
+  const opts = Object.create(null);
   let i = 0;
   while (i < s.length) {
     while (i < s.length && /\s/.test(s[i])) i++;
@@ -224,20 +224,20 @@ function parseOptions(s) {
 function expr(inner, params) {
   const m = /^\s*(\w+)\s*(?:,\s*plural\s*,([\s\S]*))?$/.exec(inner);
   if (!m) throw new Error("bad expression: {" + inner + "}");
-  const v = params[m[1]];
+  const v = Object.prototype.hasOwnProperty.call(params, m[1]) ? params[m[1]] : undefined;
   if (v === undefined) throw new Error("missing parameter: " + m[1]);
   if (m[2] === undefined) return String(v);
   const opts = parseOptions(m[2]);
   const key = ("=" + v) in opts ? "=" + v : v === 1 ? "one" : "other";
   const branch = opts[key] ?? opts.other;
-  return format(branch.replace(/#/g, String(v)), params);
+  return format(branch, params, String(v));
 }
 
-export function format(msg, params = {}) {
+export function format(msg, params = {}, hash) {
   let out = "";
   let i = 0;
   while (i < msg.length) {
-    if (msg[i] !== "{") { out += msg[i++]; continue; }
+    if (msg[i] !== "{") { out += msg[i] === "#" && hash !== undefined ? hash : msg[i]; i++; continue; }
     const j = matchBrace(msg, i);
     out += expr(msg.slice(i + 1, j - 1), params);
     i = j;
@@ -248,7 +248,7 @@ export function format(msg, params = {}) {
 export function t(key, params = {}) {
   let v = strings;
   for (const part of key.split(".")) {
-    if (v === undefined || v === null || !(part in v)) throw new Error("unknown string key: " + key);
+    if (v === null || typeof v !== "object" || !Object.prototype.hasOwnProperty.call(v, part)) throw new Error("unknown string key: " + key);
     v = v[part];
   }
   return typeof v === "string" ? format(v, params) : v;
