@@ -5,7 +5,7 @@ import { engine, EngineError } from './engine-client.js';
 import { sniff } from './sniff.js';
 import { LARGE_INPUT_BYTES } from './config.js';
 import { createFileList } from './file-list.js';
-import { createStatus } from './status.js';
+import { createStatus, isolate } from './status.js';
 import { createDownload, formatSize } from './download.js';
 
 // Error codes that have a text in strings.es.js. Any other code is shown as INTERNAL, so t() is
@@ -34,6 +34,7 @@ export function createTool(def, root = document) {
   const download = createDownload(slot, `${def.strings}.downloadSize`);
 
   let busy = false;
+  let jobSeq = 0; // a job result counts only while its number is still the current one
   let inspecting = Promise.resolve();
 
   input.setAttribute('accept', def.acceptAttr);
@@ -47,6 +48,7 @@ export function createTool(def, root = document) {
 
   // Any change of the list ends the current result and clears a stale error.
   function listChanged() {
+    jobSeq += 1;
     download.revoke();
     resultEl.hidden = true;
     status.clearError();
@@ -62,7 +64,7 @@ export function createTool(def, root = document) {
   }
 
   function failWith(code, name) {
-    status.error(t(`errors.${errorKey(def, code)}`, { name: name || '' }));
+    status.error(t(`errors.${errorKey(def, code)}`, { name: isolate(name) }));
     status.focusAlert();
   }
 
@@ -95,7 +97,7 @@ export function createTool(def, root = document) {
       for (const entry of added) {
         if (list.get(entry.id)) await inspectEntry(entry);
       }
-      status.info(t('status.added', { count: added.length }));
+      if (added.some((e) => list.get(e.id))) status.info(t('status.added', { count: added.length }));
     });
   }
 
@@ -116,7 +118,7 @@ export function createTool(def, root = document) {
     if (!entry || to < 0) return;
     listChanged();
     list.focusButton(id, delta < 0 ? 'up' : 'down');
-    status.info(t('status.moved', { name: entry.name, position: to + 1, total: list.entries().length }));
+    status.info(t('status.moved', { name: isolate(entry.name), position: to + 1, total: list.entries().length }));
   }
 
   function removeRow(id) {
@@ -127,43 +129,44 @@ export function createTool(def, root = document) {
     const next = rest[removed.index] || rest[removed.index - 1];
     if (next) list.focusButton(next.id, 'remove');
     else chooseBtn.focus();
-    status.info(t('status.removed', { name: removed.entry.name, count: rest.length }));
+    status.info(t('status.removed', { name: isolate(removed.entry.name), count: rest.length }));
   }
 
   // ---- the action
 
   async function run() {
     if (busy) return;
+    // The job slot is taken before any await, so a second press right away does nothing.
+    const job = ++jobSeq;
+    const stale = () => job !== jobSeq;
+    setBusy(true);
+    const refuse = (text) => {
+      setBusy(false);
+      status.error(text);
+      status.focusAlert();
+    };
     await inspecting;
+    if (stale()) return;
     const entries = list.entries();
     const bad = entries.filter((e) => e.status !== 'ready');
-    if (entries.length === 0) {
-      status.error(t('errors.noFiles'));
-      status.focusAlert();
-      return;
-    }
-    if (bad.length > 0) {
-      status.error(t('errors.rowSummary', { count: bad.length }));
-      status.focusAlert();
-      return;
-    }
-    if (entries.length < def.minFiles) {
-      status.error(t('errors.tooFew', { min: def.minFiles }));
-      status.focusAlert();
-      return;
-    }
+    if (entries.length === 0) return refuse(t('errors.noFiles'));
+    if (bad.length > 0) return refuse(t('errors.rowSummary', { count: bad.length }));
+    if (entries.length < def.minFiles) return refuse(t('errors.tooFew', { min: def.minFiles }));
 
     status.clearError();
     download.revoke();
     resultEl.hidden = true;
-    setBusy(true);
     const total = entries.reduce((n, e) => n + e.size, 0);
     if (total > LARGE_INPUT_BYTES) status.info(t('status.largeWarning', { size: formatSize(total) }));
     try {
       const buffers = [];
-      for (const e of entries) buffers.push(await e.file.arrayBuffer());
+      for (const e of entries) {
+        buffers.push(await e.file.arrayBuffer());
+        if (stale()) return;
+      }
       const files = buffers.map((bytes, index) => ({ index, kind: entries[index].kind, bytes }));
-      const res = await engine.call(def.op, { files, options: {} }, (done, of) => status.progress(done, of), buffers);
+      const res = await engine.call(def.op, { files, options: {} }, (done, of) => { if (!stale()) status.progress(done, of); }, buffers);
+      if (stale()) return; // the list changed or was restarted meanwhile: this result is dropped
       const size = res.bytes.byteLength;
       const link = download.offer(res.bytes, def.outputName(entries));
       resultEl.hidden = false;
@@ -171,6 +174,7 @@ export function createTool(def, root = document) {
       setBusy(false);
       link.focus();
     } catch (err) {
+      if (stale()) return;
       setBusy(false);
       const code = err instanceof EngineError ? err.code : 'INTERNAL';
       const entry = err instanceof EngineError && Number.isInteger(err.index) ? entries[err.index] : undefined;
@@ -185,14 +189,14 @@ export function createTool(def, root = document) {
 
   restartBtn.addEventListener('click', () => {
     list.clear();
-    listChanged();
+    listChanged(); // also ends a job that is still running: its result is dropped
+    setBusy(false);
     status.clear();
     status.info(t('status.cleared'));
     chooseBtn.focus();
   });
 
   chooseBtn.textContent = t('common.chooseFiles');
-  return { list, status, download };
 }
 
 // Starts the tool on the current page, unless the browser cannot run the engine (app.js says so).

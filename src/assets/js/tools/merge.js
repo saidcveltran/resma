@@ -3,18 +3,13 @@ import { outputName } from '../filename.js';
 import { bootTool } from '../tool-controller.js';
 
 const definition = {
-  id: 'merge',
-  route: '/unir-pdf/',
   accepts: ['pdf'],
   acceptAttr: 'application/pdf,.pdf',
   wrongType: 'WRONG_TYPE_PDF',
   minFiles: 2,
-  options: [],
   op: 'merge',
   outputName: (entries) => outputName('merge', entries[0].name, entries.length),
   strings: 'merge',
 };
 
 bootTool(definition);
-
-export default definition;

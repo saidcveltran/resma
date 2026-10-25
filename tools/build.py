@@ -365,12 +365,15 @@ def check_budget(site, files, assets_prefix, pages):
 
     gz = {p: gzip_size(d) for p, d in files.items()}
     css = sum(s for p, s in gz.items() if p.startswith(assets_prefix) and p.endswith(".css"))
-    js = sum(s for p, s in gz.items()
-             if p.startswith(assets_prefix) and p.endswith(".js") and "/vendor/" not in p)
+    # Engine class: the vendored library plus the worker modules (they load inside the worker after
+    # the page is ready). App JS class: the page modules only (decision 16).
+    engine_prefixes = ("vendor/", "js/worker/engine-worker.js", "js/worker/errors.js", "js/worker/ops/")
+    js_files = {p[len(assets_prefix):]: n for p, n in gz.items() if p.startswith(assets_prefix) and p.endswith(".js")}
+    engine = sum(n for rel, n in js_files.items() if rel.startswith(engine_prefixes))
+    js = sum(n for rel, n in js_files.items() if not rel.startswith(engine_prefixes))
     check("css total", css, b["css_gzip_kb"] * kb, "5.4 CSS")
-    check("app js total", js, b["js_gzip_kb"] * kb, "5.4 App JS")
-    check("engine (vendor)", gz[f"{assets_prefix}vendor/pdf-lib.esm.min.js"], b["engine_gzip_kb"] * kb,
-          "5.4 Engine")
+    check("app js page modules", js, b["js_gzip_kb"] * kb, "5.4 App JS")
+    check("engine incl. worker modules", engine, b["engine_gzip_kb"] * kb, "5.4 Engine")
     fonts = [p for p in files if p.startswith(assets_prefix) and p.endswith(".woff2")]
     fsize = sum(len(files[p]) for p in fonts)
     ok = len(fonts) <= b["fonts_max_files"] and fsize <= b["fonts_total_kb"] * kb

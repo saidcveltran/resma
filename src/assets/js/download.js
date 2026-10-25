@@ -31,7 +31,6 @@ export function createDownload(slot, labelKey) {
 
   return {
     revoke,
-    get link() { return link; },
     offer(bytes, name) {
       revoke();
       const blob = new Blob([bytes], { type: 'application/pdf' });

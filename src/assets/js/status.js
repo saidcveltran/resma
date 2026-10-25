@@ -5,6 +5,12 @@
 import { t } from './strings.es.js';
 import { STATUS_THROTTLE_MS } from './config.js';
 
+// A raw file name inside a sentence: isolate controls are removed from the name, then the name is
+// wrapped in FSI ... PDI, so a U+202E in it cannot reorder the text that follows (SEC-2).
+export function isolate(name) {
+  return name ? `\u2068${String(name).replace(/[\u2066-\u2069]/g, '')}\u2069` : '';
+}
+
 export function createStatus(statusEl, alertEl) {
   let lastWrite = -Infinity;
   let timer = 0;

@@ -1,8 +1,9 @@
 // C3 file list: ordered list model plus rendering into an <ol>. Every file name is rendered as a
 // text node inside <bdi translate="no"> (the raw name may hold bidi controls); no HTML is built from
-// a name (T6, CS-7). The only other places a name appears are aria-label texts made from string keys.
+// a name (T6, CS-7). The only other places a name appears are sentences made from string keys, with the name isolated.
 import { t } from './strings.es.js';
 import { formatSize } from './download.js';
+import { isolate } from './status.js';
 
 // createFileList(listEl, onAction): onAction(action, id) is called for 'up' | 'down' | 'remove'.
 export function createFileList(listEl, onAction) {
@@ -23,7 +24,7 @@ export function createFileList(listEl, onAction) {
     b.dataset.id = String(entry.id);
     b.dataset.act = action;
     b.textContent = t(labelKey);
-    b.setAttribute('aria-label', t(ariaKey, { name: entry.name }));
+    b.setAttribute('aria-label', t(ariaKey, { name: isolate(entry.name) }));
     return b;
   }
 
@@ -52,12 +53,13 @@ export function createFileList(listEl, onAction) {
       err.id = errorId;
       err.className = 'file-error';
       err.setAttribute('translate', 'no'); // the message holds the file name
-      err.textContent = t(`errors.${entry.errorCode}`, { name: entry.name });
+      err.textContent = t(`errors.${entry.errorCode}`, { name: isolate(entry.name) });
       li.appendChild(err);
     }
 
     const actions = document.createElement('div');
     actions.className = 'file-actions';
+    actions.setAttribute('translate', 'no'); // the buttons' aria-labels hold the file name
     // First row: no "Subir"; last row: no "Bajar" (left out, not disabled).
     if (index > 0) actions.appendChild(button(entry, 'up', 'common.moveUp', 'common.moveUpAria'));
     if (index < items.length - 1) actions.appendChild(button(entry, 'down', 'common.moveDown', 'common.moveDownAria'));
@@ -83,7 +85,6 @@ export function createFileList(listEl, onAction) {
   return {
     entries() { return items.slice(); },
     get(id) { return items.find((e) => e.id === id); },
-    indexOf(id) { return items.findIndex((e) => e.id === id); },
     // files: File[] -> new entries (status 'checking'); the File is kept by reference.
     add(files) {
       const added = files.map((file) => ({
