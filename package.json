@@ -1,0 +1,9 @@
+{
+  "name": "resma",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "dependencies": {
+    "@cantoo/pdf-lib": "2.11.0"
+  }
+}

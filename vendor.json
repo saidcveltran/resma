@@ -1,0 +1,8 @@
+{
+  "package": "@cantoo/pdf-lib",
+  "version": "2.11.0",
+  "source_git_head": "eafae49f9704b037b9474bd51309c3e9dca0e44b",
+  "path": "node_modules/@cantoo/pdf-lib/dist/pdf-lib.esm.min.js",
+  "sha256": "ac197f002ca7b6f7789334be108ee13a97928b561eafa774d303d43bb7dd7fd1",
+  "bytes": 614304
+}
