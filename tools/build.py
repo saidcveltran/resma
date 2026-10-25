@@ -18,6 +18,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,6 +32,10 @@ VALUE_RE = re.compile(r"\{\{([a-z0-9_]+|s:[A-Za-z0-9_.]+)\}\}")
 STRINGS_PATH = "js/strings.es.js"
 STRINGS_RE = re.compile(r"^export const strings = (\{.*?\n\});\n", re.S | re.M)
 STRING_PARAMS = {"version"}  # the only {param} a build-time string may carry
+# Characters a build-time string may not hold: control, format (bidi marks), line and paragraph
+# separators, private use and unassigned.
+REFUSED_CATEGORIES = {"Cc", "Cf", "Zl", "Zp", "Co", "Cn"}
+ARRAY_INDEX_RE = re.compile(r"0|[1-9][0-9]*")  # canonical ASCII index: no sign, no leading zero
 ANY_BRACES_RE = re.compile(r"\{\{.*?\}\}", re.S)
 DOLLAR_RE = re.compile(r"\$\{[^}]*\}?")
 SOURCEMAP_RE = re.compile(rb"\r?\n?//# sourceMappingURL=[^\r\n]*\s*\Z")
@@ -234,7 +239,7 @@ def lookup_string(strings, key, label):
             node = None
         elif isinstance(node, dict) and part in node:
             node = node[part]
-        elif isinstance(node, list) and part.isdigit() and int(part) < len(node):
+        elif isinstance(node, list) and ARRAY_INDEX_RE.fullmatch(part) and int(part) < len(node):
             node = node[int(part)]
         else:
             node = None
@@ -248,6 +253,10 @@ def lookup_string(strings, key, label):
 def string_text(strings, key, label, values):
     """Resolve a key to text. Only {version} may be substituted; any other brace is an error."""
     text = lookup_string(strings, key, label)
+    for ch in text:
+        if unicodedata.category(ch) in REFUSED_CATEGORIES:
+            raise BuildError(f"{label}: string key {key!r} holds the character U+{ord(ch):04X} "
+                             f"({unicodedata.category(ch)}), which is not allowed in page text")
     out = []
     for piece in re.split(r"(\{[A-Za-z0-9_]+\})", text):
         m = re.fullmatch(r"\{([A-Za-z0-9_]+)\}", piece)

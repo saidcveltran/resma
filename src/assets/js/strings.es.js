@@ -113,8 +113,8 @@ export const strings = {
       "Si hace falta, cambia el orden con los botones Subir y Bajar.",
       "Usa «Unir PDF» y después «Descargar PDF»."
     ],
-    "limitsNote": "Los formularios rellenables y los marcadores de los PDF originales pueden perderse al unirlos.",
-    "cleanNote": "resma junta los archivos tal cual: no limpia ni quita contenido oculto de los PDF originales, como enlaces o acciones."
+    "limitsNote": "Los formularios rellenables se aplanan: se siguen viendo, pero ya no se pueden rellenar. Los marcadores de los PDF originales pueden perderse.",
+    "cleanNote": "Al unir, resma quita los scripts de las páginas. Si un PDF tenía restricciones de edición, impresión o copia, el PDF unido no las conserva."
   },
   "images": {
     "title": "JPG a PDF",
@@ -192,6 +192,12 @@ export const strings = {
   }
 };
 
+function deepFreeze(o) {
+  for (const v of Object.values(o)) if (v !== null && typeof v === "object") deepFreeze(v);
+  return Object.freeze(o);
+}
+deepFreeze(strings);
+
 function matchBrace(s, i) {
   let depth = 1, j = i + 1;
   while (j < s.length && depth) {
@@ -230,10 +236,13 @@ function expr(inner, params) {
   const opts = parseOptions(m[2]);
   const key = ("=" + v) in opts ? "=" + v : v === 1 ? "one" : "other";
   const branch = opts[key] ?? opts.other;
+  if (branch === undefined) throw new Error("missing plural branch: " + key);
   return format(branch, params, String(v));
 }
 
 export function format(msg, params = {}, hash) {
+  if (params === null) params = {};
+  if (typeof params !== "object") throw new Error("params must be an object");
   let out = "";
   let i = 0;
   while (i < msg.length) {
@@ -246,12 +255,14 @@ export function format(msg, params = {}, hash) {
 }
 
 export function t(key, params = {}) {
+  if (typeof key !== "string") throw new Error("string key must be text");
   let v = strings;
   for (const part of key.split(".")) {
     if (v === null || typeof v !== "object" || !Object.prototype.hasOwnProperty.call(v, part)) throw new Error("unknown string key: " + key);
     v = v[part];
   }
-  return typeof v === "string" ? format(v, params) : v;
+  if (typeof v !== "string") throw new Error("not a text: " + key);
+  return format(v, params);
 }
 
 export default strings;
