@@ -442,7 +442,7 @@ def check_budget(site, files, assets_prefix, pages):
     css = sum(s for p, s in gz.items() if p.startswith(assets_prefix) and p.endswith(".css"))
     # Engine class: the vendored library plus the worker modules (they load inside the worker after
     # the page is ready). App JS class: the page modules only (decision 16).
-    engine_prefixes = ("vendor/", "js/worker/engine-worker.js", "js/worker/errors.js", "js/worker/ops/")
+    engine_prefixes = ("vendor/", "js/worker/")
     js_files = {p[len(assets_prefix):]: n for p, n in gz.items() if p.startswith(assets_prefix) and p.endswith(".js")}
     engine = sum(n for rel, n in js_files.items() if rel.startswith(engine_prefixes))
     js = sum(n for rel, n in js_files.items() if not rel.startswith(engine_prefixes))
