@@ -1,8 +1,11 @@
 // C1 page shell: static text is rendered at build time ({{s:key}}); this module writes only the dynamic
-// status text, checks the browser and prefetches the engine.
+// status text, checks the browser and prefetches the engine. The engine line (preparing, ready or
+// failed) is the one status the visitor can rely on before going offline; when it fails, a retry
+// button starts the engine again.
 import { t } from './strings.es.js';
 import { engine } from './engine-client.js';
 import { IDLE_FALLBACK_MS } from './config.js';
+import { showAlert } from './status.js';
 
 const root = document.documentElement;
 const STATE_KEY = { preparing: 'engine.preparing', ready: 'engine.ready', failed: 'engine.failed' };
@@ -13,11 +16,12 @@ function markCurrentTool() {
   }
 }
 
-function showEngineState(status, state) {
+function showEngineState(status, retry, state) {
   const key = STATE_KEY[state];
   if (!key) return;
   root.dataset.engine = state;
   status.textContent = t(key);
+  if (retry) retry.hidden = state !== 'failed';
 }
 
 function afterLoadAndIdle(fn) {
@@ -32,13 +36,15 @@ function boot() {
   markCurrentTool();
   const status = document.querySelector('[data-status]');
   const alertRegion = document.querySelector('[data-alert]');
+  const retry = document.querySelector('[data-engine-retry]');
   if (typeof Worker === 'undefined') {
     root.dataset.engine = 'unsupported';
-    alertRegion.textContent = t('common.unsupportedBrowser');
+    showAlert(alertRegion, t('common.unsupportedBrowser'));
     return;
   }
-  showEngineState(status, 'preparing');
-  engine.onState((state) => showEngineState(status, state));
+  showEngineState(status, retry, 'preparing');
+  engine.onState((state) => showEngineState(status, retry, state));
+  if (retry) retry.addEventListener('click', () => { engine.ready().catch(() => {}); });
   afterLoadAndIdle(() => { engine.ready().catch(() => {}); });
 }
 

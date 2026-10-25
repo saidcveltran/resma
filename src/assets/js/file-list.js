@@ -4,6 +4,7 @@
 import { t } from './strings.es.js';
 import { formatSize } from './download.js';
 import { isolate } from './status.js';
+import { icon } from './icons.js';
 
 // createFileList(listEl, onAction): onAction(action, id) is called for 'up' | 'down' | 'remove'.
 export function createFileList(listEl, onAction) {
@@ -18,23 +19,36 @@ export function createFileList(listEl, onAction) {
     return bdi;
   }
 
-  function button(entry, action, labelKey, ariaKey) {
+  // A row button: a decorative icon and the verb. The accessible name is the aria-label (verb + file name).
+  function button(entry, action, iconName, labelKey, ariaKey) {
     const b = document.createElement('button');
     b.type = 'button';
+    b.classList.add('btn', 'btn-secondary', 'btn-small');
     b.dataset.id = String(entry.id);
     b.dataset.act = action;
-    b.textContent = t(labelKey);
+    const label = document.createElement('span');
+    label.textContent = t(labelKey);
+    b.append(icon(iconName), label);
     b.setAttribute('aria-label', t(ariaKey, { name: isolate(entry.name) }));
     return b;
   }
 
   function row(entry, index) {
     const li = document.createElement('li');
+    li.className = 'file-row';
     li.dataset.id = String(entry.id);
+    li.dataset.state = entry.status;
+    const mark = document.createElement('span');
+    mark.className = 'file-icon';
+    mark.appendChild(icon(entry.status === 'error' ? 'alert' : 'file-pdf'));
+    li.appendChild(mark);
+    const body = document.createElement('div');
+    body.className = 'file-body';
+    li.appendChild(body);
     const head = document.createElement('p');
     head.className = 'file-head';
     head.appendChild(fileName(entry));
-    li.appendChild(head);
+    body.appendChild(head);
 
     const info = document.createElement('p');
     info.className = 'file-info';
@@ -43,8 +57,14 @@ export function createFileList(listEl, onAction) {
       t('common.fileSize', { size: formatSize(entry.size) }),
     ];
     if (entry.status === 'ready' && Number.isInteger(entry.pages)) parts.push(t('common.pages', { count: entry.pages }));
-    info.textContent = parts.join(' · ');
-    li.appendChild(info);
+    if (entry.status === 'checking') {
+      const spin = document.createElement('span');
+      spin.className = 'spinner';
+      spin.setAttribute('aria-hidden', 'true');
+      info.appendChild(spin);
+    }
+    info.appendChild(document.createTextNode(parts.join(' · ')));
+    body.appendChild(info);
 
     let errorId = null;
     if (entry.status === 'error') {
@@ -53,7 +73,8 @@ export function createFileList(listEl, onAction) {
       err.id = errorId;
       err.className = 'file-error';
       err.setAttribute('translate', 'no'); // the message holds the file name
-      err.textContent = t(`errors.${entry.errorCode}`, { name: isolate(entry.name) });
+      // The text stays a direct text node of the paragraph; the icon is decorative.
+      err.append(icon('alert'), document.createTextNode(t(`errors.${entry.errorCode}`, { name: isolate(entry.name) })));
       li.appendChild(err);
     }
 
@@ -61,9 +82,9 @@ export function createFileList(listEl, onAction) {
     actions.className = 'file-actions';
     actions.setAttribute('translate', 'no'); // the buttons' aria-labels hold the file name
     // First row: no "Subir"; last row: no "Bajar" (left out, not disabled).
-    if (index > 0) actions.appendChild(button(entry, 'up', 'common.moveUp', 'common.moveUpAria'));
-    if (index < items.length - 1) actions.appendChild(button(entry, 'down', 'common.moveDown', 'common.moveDownAria'));
-    const remove = button(entry, 'remove', 'common.remove', 'common.removeAria');
+    if (index > 0) actions.appendChild(button(entry, 'up', 'arrow-up', 'common.moveUp', 'common.moveUpAria'));
+    if (index < items.length - 1) actions.appendChild(button(entry, 'down', 'arrow-down', 'common.moveDown', 'common.moveDownAria'));
+    const remove = button(entry, 'remove', 'x', 'common.remove', 'common.removeAria');
     if (errorId) remove.setAttribute('aria-describedby', errorId);
     actions.appendChild(remove);
     li.appendChild(actions);

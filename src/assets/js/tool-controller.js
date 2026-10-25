@@ -1,5 +1,7 @@
 // C2 tool controller: drives one tool page: choose files -> list -> action -> result.
-// It reads the page markup by data attributes and renders only text (textContent, setAttribute).
+// It reads the page markup by data attributes and renders only text (text nodes, setAttribute).
+// The drop zone has a visual state (empty, compact once there are files, disabled while a job runs).
+// When the controller is wired, <html data-tool="ready"> says so.
 import { t } from './strings.es.js';
 import { engine, EngineError } from './engine-client.js';
 import { sniff } from './sniff.js';
@@ -24,13 +26,15 @@ function errorKey(def, code) {
 export function createTool(def, root = document) {
   const q = (name) => root.querySelector(`[data-${name}]`);
   const chooseBtn = q('choose');
+  const chooseLabel = chooseBtn.querySelector('[data-choose-label]') || chooseBtn;
+  const dropzone = q('dropzone');
   const input = q('input');
   const listEl = q('list');
   const actionBtn = q('action');
   const resultEl = q('result');
   const slot = q('result-slot');
   const restartBtn = q('restart');
-  const status = createStatus(q('status'), q('alert'));
+  const status = createStatus(q('status'), q('alert'), q('progress'));
   const download = createDownload(slot, `${def.strings}.downloadSize`);
 
   let busy = false;
@@ -46,21 +50,36 @@ export function createTool(def, root = document) {
     else moveRow(id, action === 'up' ? -1 : 1);
   });
 
+  // With a result on screen the drop zone and the action button are hidden, so the download is the one
+  // primary button. The list stays; changing it ends the result and brings them back.
+  function showResult(on) {
+    dropzone.hidden = on;
+    actionBtn.hidden = on;
+    resultEl.hidden = !on;
+  }
+
+  function dropzoneState() {
+    dropzone.dataset.state = busy ? 'disabled' : list.entries().length > 0 ? 'compact' : 'empty';
+  }
+
   // Any change of the list ends the current result and clears a stale error.
   function listChanged() {
     jobSeq += 1;
     download.revoke();
-    resultEl.hidden = true;
+    showResult(false);
     status.clearError();
-    chooseBtn.textContent = t(list.entries().length > 0 ? 'common.chooseMoreFiles' : 'common.chooseFiles');
+    chooseLabel.textContent = t(list.entries().length > 0 ? 'common.chooseMoreFiles' : 'common.chooseFiles');
+    dropzoneState();
   }
 
   function setBusy(on) {
     busy = on;
     listEl.inert = on;
     actionBtn.setAttribute('aria-disabled', String(on));
+    actionBtn.setAttribute('aria-busy', String(on));
     chooseBtn.setAttribute('aria-disabled', String(on));
     actionBtn.textContent = t(`${def.strings}.${on ? 'actionBusy' : 'action'}`);
+    dropzoneState();
   }
 
   function failWith(code, name) {
@@ -155,9 +174,10 @@ export function createTool(def, root = document) {
 
     status.clearError();
     download.revoke();
-    resultEl.hidden = true;
+    showResult(false);
     const total = entries.reduce((n, e) => n + e.size, 0);
     if (total > LARGE_INPUT_BYTES) status.info(t('status.largeWarning', { size: formatSize(total) }));
+    status.start(entries.length);
     try {
       const buffers = [];
       for (const e of entries) {
@@ -169,7 +189,7 @@ export function createTool(def, root = document) {
       if (stale()) return; // the list changed or was restarted meanwhile: this result is dropped
       const size = res.bytes.byteLength;
       const link = download.offer(res.bytes, def.outputName(entries));
-      resultEl.hidden = false;
+      showResult(true);
       status.info(t('status.done', { pages: res.pages, size: formatSize(size) }));
       setBusy(false);
       link.focus();
@@ -196,7 +216,9 @@ export function createTool(def, root = document) {
     chooseBtn.focus();
   });
 
-  chooseBtn.textContent = t('common.chooseFiles');
+  chooseLabel.textContent = t('common.chooseFiles');
+  setBusy(false);
+  (root.documentElement || root).dataset.tool = 'ready';
 }
 
 // Starts the tool on the current page, unless the browser cannot run the engine (app.js says so).

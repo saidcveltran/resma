@@ -3,14 +3,22 @@ import { WORKER_URL, POLICY_NAME, WATCHDOG_MS, START_TIMEOUT_MS } from './config
 
 // SEC-2: module scope; exact compare against the constant; returns the constant, never the input.
 // No createHTML and no createScript. Without Trusted Types, spawn() uses the plain constant.
-const policy = globalThis.trustedTypes
-  ? globalThis.trustedTypes.createPolicy(POLICY_NAME, {
-    createScriptURL(input) {
-      if (input === WORKER_URL) return WORKER_URL;
-      throw new TypeError('resma-worker:url-not-allowed');
-    },
-  })
-  : null;
+// If the policy cannot be created (a name clash, for example), the module still loads: there is no
+// policy, the worker is refused by the browser, and the start ends in the visible failed state (SEC-8).
+function createPolicy() {
+  if (!globalThis.trustedTypes) return null;
+  try {
+    return globalThis.trustedTypes.createPolicy(POLICY_NAME, {
+      createScriptURL(input) {
+        if (input === WORKER_URL) return WORKER_URL;
+        throw new TypeError('resma-worker:url-not-allowed');
+      },
+    });
+  } catch {
+    return null;
+  }
+}
+const policy = createPolicy();
 
 export class EngineError extends Error {
   constructor(code, index) {

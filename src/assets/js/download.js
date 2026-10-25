@@ -1,6 +1,7 @@
 // C9 download: result bytes -> typed Blob -> object URL -> a visible <a download> link.
 // The Blob is always application/pdf (CS-4). The file name goes only into the download attribute.
 import { t } from './strings.es.js';
+import { icon } from './icons.js';
 
 const UNITS = ['B', 'KB', 'MB', 'GB'];
 
@@ -38,7 +39,8 @@ export function createDownload(slot, labelKey) {
       link = document.createElement('a');
       link.setAttribute('href', url);
       link.setAttribute('download', name);
-      link.textContent = t(labelKey, { size: formatSize(blob.size) });
+      link.classList.add('btn', 'btn-primary');
+      link.append(icon('download'), document.createTextNode(t(labelKey, { size: formatSize(blob.size) })));
       slot.appendChild(link);
       return link;
     },
