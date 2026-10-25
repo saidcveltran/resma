@@ -12,3 +12,7 @@ export const WATCHDOG_MS = 60000;
 
 // Engine prefetch: after load, in idle time; without requestIdleCallback after this delay.
 export const IDLE_FALLBACK_MS = 1000;
+
+// The worker must post ready within this time of being created, or the start counts as failed
+// (so ready() never waits for ever on a worker that stays silent).
+export const START_TIMEOUT_MS = 15000;

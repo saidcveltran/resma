@@ -1,5 +1,5 @@
 // C6 engine client: owns the single warm worker, created through the Trusted Types policy (CS-1).
-import { WORKER_URL, POLICY_NAME, WATCHDOG_MS } from './config.js';
+import { WORKER_URL, POLICY_NAME, WATCHDOG_MS, START_TIMEOUT_MS } from './config.js';
 
 // SEC-2: module scope; exact compare against the constant; returns the constant, never the input.
 // No createHTML and no createScript. Without Trusted Types, spawn() uses the plain constant.
@@ -95,13 +95,25 @@ function createEngine() {
     }
     worker = w;
     let started = false;
+    // A worker that never says ready (or says nothing at all) must not leave ready() waiting.
+    const startTimer = setTimeout(() => {
+      if (w !== worker || started) return;
+      dropWorker();
+      fail();
+    }, START_TIMEOUT_MS);
     w.onmessage = (ev) => {
       if (w !== worker) return;
       const m = ev.data || {};
       if (m.type === 'ready') {
         started = true;
+        clearTimeout(startTimer);
         resolveReady();
         setState('ready');
+      } else if (m.type === 'error' && !started) {
+        // The worker reports that it could not start.
+        clearTimeout(startTimer);
+        dropWorker();
+        fail();
       } else if (m.type === 'progress') {
         const p = pending.get(m.id);
         if (p) { arm(m.id); if (p.onProgress) p.onProgress(m.done, m.total); }
@@ -113,6 +125,7 @@ function createEngine() {
     };
     const broken = () => {
       if (w !== worker) return;
+      clearTimeout(startTimer);
       if (started) { recycle(); } else { dropWorker(); fail(); }
     };
     w.onerror = broken;
