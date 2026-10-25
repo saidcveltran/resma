@@ -15,7 +15,7 @@ const started = (async () => {
     const [lib, inspect, merge] = await Promise.all([
       import(VENDOR_URL), import('./ops/inspect.js'), import('./ops/merge.js'),
     ]);
-    if (typeof lib.PDFDocument?.create !== 'function') throw new Error('engine missing');
+    if (typeof lib.PDFDocument?.create !== 'function') throw new Error('engine-missing');
     opMap.inspect = (m) => inspect.run(m, lib);
     opMap.merge = (m, progress) => merge.run(m, lib, progress);
     opMap.ping = async () => ({ pages: 0 });

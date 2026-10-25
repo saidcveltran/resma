@@ -1,4 +1,5 @@
-// C1 page shell: fills the texts from strings.es.js, checks the browser, prefetches the engine.
+// C1 page shell: static text is rendered at build time ({{s:key}}); this module writes only the dynamic
+// status text, checks the browser and prefetches the engine.
 import { t } from './strings.es.js';
 import { engine } from './engine-client.js';
 import { IDLE_FALLBACK_MS } from './config.js';
@@ -6,18 +7,8 @@ import { IDLE_FALLBACK_MS } from './config.js';
 const root = document.documentElement;
 const STATE_KEY = { preparing: 'engine.preparing', ready: 'engine.ready', failed: 'engine.failed' };
 
-function fillStrings() {
-  for (const el of document.querySelectorAll('[data-s]')) {
-    const params = el.dataset.version ? { version: el.dataset.version } : {};
-    el.textContent = t(el.dataset.s, params);
-  }
-  for (const el of document.querySelectorAll('[data-s-aria]')) {
-    el.setAttribute('aria-label', t(el.dataset.sAria));
-  }
-}
-
 function markCurrentTool() {
-  for (const a of document.querySelectorAll('.tool-nav a')) {
+  for (const a of document.querySelector('.tool-nav')?.querySelectorAll('a') ?? []) {
     if (new URL(a.href).pathname === location.pathname) a.setAttribute('aria-current', 'page');
   }
 }
@@ -38,7 +29,6 @@ function afterLoadAndIdle(fn) {
 }
 
 function boot() {
-  fillStrings();
   markCurrentTool();
   const status = document.querySelector('[data-status]');
   const alertRegion = document.querySelector('[data-alert]');

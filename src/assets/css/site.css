@@ -11,3 +11,13 @@ main { flex: 1 0 auto; }
 .brand, .tool-nav a { display: inline-flex; align-items: center; min-height: var(--size-target-min); }
 .tool { margin: var(--space-6) 0; }
 .alert:empty, .status:empty { display: none; }
+body { background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); }
+h1, h2 { font-family: var(--font-display); }
+.brand img { display: block; height: var(--space-8); width: auto; }
+.made-by { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.made-by img { display: block; height: var(--space-5); width: var(--space-5); }
+.brand .logo-dark, .made-by .logo-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  .brand .logo-light, .made-by .logo-light { display: none; }
+  .brand .logo-dark, .made-by .logo-dark { display: block; }
+}

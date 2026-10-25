@@ -7,7 +7,7 @@ const policy = globalThis.trustedTypes
   ? globalThis.trustedTypes.createPolicy(POLICY_NAME, {
     createScriptURL(input) {
       if (input === WORKER_URL) return WORKER_URL;
-      throw new TypeError('resma-worker: URL not allowed');
+      throw new TypeError('resma-worker:url-not-allowed');
     },
   })
   : null;
