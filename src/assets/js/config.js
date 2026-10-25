@@ -16,3 +16,16 @@ export const IDLE_FALLBACK_MS = 1000;
 // The worker must post ready within this time of being created, or the start counts as failed
 // (so ready() never waits for ever on a worker that stays silent).
 export const START_TIMEOUT_MS = 15000;
+
+// Sniffer (DESIGN 6.7, C5): only the first bytes of a file are ever read to classify it.
+export const SNIFF_BYTES = 1024;
+
+// Output file name (DESIGN 6.5, SA-6): the whole name, suffix and ".pdf" included, stays within this.
+export const OUTPUT_NAME_MAX = 80;
+export const OUTPUT_EXTENSION = '.pdf';
+export const OUTPUT_SUFFIX_MERGE = '-unido';
+export const OUTPUT_SUFFIX_IMAGES = '-fotos';
+export const OUTPUT_FALLBACK_MERGE = 'documento-unido.pdf';
+export const OUTPUT_FALLBACK_IMAGES = 'fotos.pdf';
+// Extensions removed from the first file's name before it becomes the base of the output name.
+export const KNOWN_INPUT_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'heif'];
