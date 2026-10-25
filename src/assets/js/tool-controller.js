@@ -1,6 +1,8 @@
 // C2 tool controller: drives one tool page: choose files -> list -> action -> result.
 // It reads the page markup by data attributes and renders only text (text nodes, setAttribute).
-// The drop zone has a visual state (empty, compact once there are files, disabled while a job runs).
+// The drop zone has a visual state (empty, compact once there are files, active while files are dragged
+// over it, disabled while a job runs). Dropping files on it is a desktop extra: it feeds the same
+// addFiles() path as the picker.
 // When the controller is wired, <html data-tool="ready"> says so.
 import { t } from './strings.es.js';
 import { engine, EngineError } from './engine-client.js';
@@ -37,7 +39,10 @@ export function createTool(def, root = document) {
   const status = createStatus(q('status'), q('alert'), q('progress'));
   const download = createDownload(slot, `${def.strings}.downloadSize`);
 
+  const hintEl = dropzone.querySelector('.hint');
+  const idleHint = hintEl ? hintEl.textContent : '';
   let busy = false;
+  let dragging = false; // files are being dragged over the zone
   let jobSeq = 0; // a job result counts only while its number is still the current one
   let inspecting = Promise.resolve();
 
@@ -59,7 +64,10 @@ export function createTool(def, root = document) {
   }
 
   function dropzoneState() {
-    dropzone.dataset.state = busy ? 'disabled' : list.entries().length > 0 ? 'compact' : 'empty';
+    const files = list.entries().length > 0;
+    dropzone.dataset.state = busy ? 'disabled' : dragging ? 'active' : files ? 'compact' : 'empty';
+    dropzone.toggleAttribute('data-compact', files); // lets the active state keep the layout it has
+    if (hintEl) hintEl.textContent = dropzone.dataset.state === 'active' ? t('common.dropActive') : idleHint;
   }
 
   // Any change of the list ends the current result and clears a stale error.
@@ -128,6 +136,58 @@ export function createTool(def, root = document) {
     input.value = '';
     addFiles(files);
   });
+
+  // ---- dropping files on the zone (desktop extra; the button stays the way in)
+
+  const carriesFiles = (ev) => Array.from((ev.dataTransfer && ev.dataTransfer.types) || []).includes('Files');
+  let depth = 0; // dragenter minus dragleave over the zone and its children
+
+  function endDrag() {
+    depth = 0;
+    if (!dragging) return;
+    dragging = false;
+    dropzoneState();
+  }
+
+  dropzone.addEventListener('dragenter', (ev) => {
+    ev.preventDefault();
+    if (!carriesFiles(ev)) return;
+    depth += 1;
+    if (!busy && !dragging) {
+      dragging = true;
+      dropzoneState();
+    }
+  });
+  dropzone.addEventListener('dragover', (ev) => {
+    ev.preventDefault(); // without this the browser does not deliver the drop
+    ev.dataTransfer.dropEffect = !busy && carriesFiles(ev) ? 'copy' : 'none';
+  });
+  dropzone.addEventListener('dragleave', (ev) => {
+    if (!carriesFiles(ev)) return;
+    depth = Math.max(0, depth - 1);
+    if (depth === 0) endDrag();
+  });
+  dropzone.addEventListener('drop', (ev) => {
+    ev.preventDefault();
+    endDrag();
+    if (busy) return;
+    const files = Array.from(ev.dataTransfer ? ev.dataTransfer.files : []);
+    if (files.length > 0) {
+      addFiles(files);
+    } else {
+      status.error(t('errors.dropNotFiles'));
+      status.focusAlert();
+    }
+  });
+  // A file dropped anywhere else must not make the browser open it and leave the page.
+  const guardOutside = (ev) => {
+    if (!carriesFiles(ev) || dropzone.contains(ev.target)) return;
+    ev.preventDefault();
+    if (ev.type === 'dragover') ev.dataTransfer.dropEffect = 'none';
+  };
+  const doc = root.ownerDocument || root;
+  doc.addEventListener('dragover', guardOutside);
+  doc.addEventListener('drop', guardOutside);
 
   // ---- order and removal
 

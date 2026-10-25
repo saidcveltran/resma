@@ -113,7 +113,7 @@ export const strings = {
       "Si hace falta, cambia el orden con los botones Subir y Bajar.",
       "Usa «Unir PDF» y después «Descargar PDF»."
     ],
-    "limitsNote": "Los formularios rellenables se aplanan: se siguen viendo, pero ya no se pueden rellenar. Los marcadores de los PDF originales pueden perderse.",
+    "limitsNote": "Los formularios rellenables se aplanan: se siguen viendo, pero ya no se pueden rellenar. Los marcadores de los PDF originales se pierden.",
     "cleanNote": "Al unir, resma quita los scripts de las páginas. Si un PDF tenía restricciones de edición, impresión o copia, el PDF unido no las conserva."
   },
   "images": {
