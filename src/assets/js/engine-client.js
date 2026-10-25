@@ -134,7 +134,7 @@ function createEngine() {
         pending.set(id, { resolve, reject, onProgress, timer: 0 });
         arm(id);
         try {
-          worker.postMessage({ id, op, ...payload }, transfer);
+          worker.postMessage({ ...payload, id, op }, transfer);
         } catch {
           settle(id, (p) => p.reject(new EngineError('INTERNAL')));
         }
