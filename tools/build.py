@@ -23,10 +23,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 # The only placeholders a page or partial may contain. Nothing is evaluated.
+# {{s:key}} is a Spanish string from src/assets/js/strings.es.js (the brand master), HTML-escaped.
 VALUE_NAMES = ("base_url", "version", "build_id", "assets_path", "route", "canonical_url",
                "title", "description", "h1")
 PARTIAL_RE = re.compile(r"\{\{partial:([a-z0-9-]+)\}\}")
-VALUE_RE = re.compile(r"\{\{([a-z0-9_]+)\}\}")
+VALUE_RE = re.compile(r"\{\{([a-z0-9_]+|s:[A-Za-z0-9_.]+)\}\}")
+STRINGS_PATH = "js/strings.es.js"
+STRINGS_RE = re.compile(r"^export const strings = (\{.*?\n\});\n", re.S | re.M)
+STRING_PARAMS = {"version"}  # the only {param} a build-time string may carry
 ANY_BRACES_RE = re.compile(r"\{\{.*?\}\}", re.S)
 DOLLAR_RE = re.compile(r"\$\{[^}]*\}?")
 SOURCEMAP_RE = re.compile(rb"\r?\n?//# sourceMappingURL=[^\r\n]*\s*\Z")
@@ -202,10 +206,61 @@ def read_text(path):
         raise BuildError(f"{path.name} is not valid UTF-8")
 
 
-TOKEN_RE = re.compile(r"\{\{(?:partial:([a-z0-9-]+)|([a-z0-9_]+))\}\}")
+TOKEN_RE = re.compile(r"\{\{(?:partial:([a-z0-9-]+)|s:([A-Za-z0-9_.]+)|([a-z0-9_]+))\}\}")
 
 
-def validate(source, label, partials, allow_partials):
+def load_strings(assets):
+    """The string table from the brand module src/assets/js/strings.es.js (a JSON object literal)."""
+    data = assets.get(STRINGS_PATH)
+    if data is None:
+        return {}
+    m = STRINGS_RE.search(data.decode("utf-8", errors="replace").replace("\r\n", "\n"))
+    if not m:
+        raise BuildError("strings.es.js: cannot find the strings object")
+    try:
+        table = json.loads(m.group(1))
+    except ValueError:
+        raise BuildError("strings.es.js: the strings object is not plain JSON")
+    if not isinstance(table, dict):
+        raise BuildError("strings.es.js: the strings object is not an object")
+    return table
+
+
+def lookup_string(strings, key, label):
+    """The text for a dotted key (arrays by index). An unknown key or a non-text value is a build error."""
+    node = strings
+    for part in key.split("."):
+        if part.startswith("_") or part == "":
+            node = None
+        elif isinstance(node, dict) and part in node:
+            node = node[part]
+        elif isinstance(node, list) and part.isdigit() and int(part) < len(node):
+            node = node[int(part)]
+        else:
+            node = None
+        if node is None:
+            raise BuildError(f"{label}: unknown string key {key!r}")
+    if not isinstance(node, str):
+        raise BuildError(f"{label}: string key {key!r} is not a text")
+    return node
+
+
+def string_text(strings, key, label, values):
+    """Resolve a key to text. Only {version} may be substituted; any other brace is an error."""
+    text = lookup_string(strings, key, label)
+    out = []
+    for piece in re.split(r"(\{[A-Za-z0-9_]+\})", text):
+        m = re.fullmatch(r"\{([A-Za-z0-9_]+)\}", piece)
+        if m and m.group(1) in STRING_PARAMS:
+            out.append(values[m.group(1)])
+        elif "{" in piece or "}" in piece:
+            raise BuildError(f"{label}: string key {key!r} needs parameters; it cannot be used as {{{{s:...}}}}")
+        else:
+            out.append(piece)
+    return "".join(out)
+
+
+def validate(source, label, partials, allow_partials, strings=None):
     """Fail on anything that is not a whitelisted token. Nothing is evaluated."""
     m = DOLLAR_RE.search(source)
     if m:
@@ -214,18 +269,29 @@ def validate(source, label, partials, allow_partials):
         t = TOKEN_RE.fullmatch(m.group(0))
         if t and t.group(1) is not None and allow_partials and t.group(1) in partials:
             continue
-        if t and t.group(2) is not None and t.group(2) in VALUE_NAMES:
+        if t and t.group(2) is not None:
+            lookup_string(strings or {}, t.group(2), label)
+            continue
+        if t and t.group(3) is not None and t.group(3) in VALUE_NAMES:
             continue
         raise BuildError(f"{label}: unknown placeholder {m.group(0)!r}")
     if source.count("{{") != len(ANY_BRACES_RE.findall(source)):
         raise BuildError(f"{label}: unknown placeholder (unclosed '{{{{')")
 
 
-def render(source, label, partials, values):
-    """Expand {{partial:name}} and {{name}} in one pass each; values are HTML-escaped."""
-    validate(source, label, partials, True)
+def render(source, label, partials, values, strings=None):
+    """Expand {{partial:name}}, {{name}} and {{s:key}} in one pass each; inserted text is HTML-escaped
+    and never scanned again."""
+    validate(source, label, partials, True, strings)
+
+    def value(m):
+        name = m.group(1)
+        if name.startswith("s:"):
+            return html.escape(string_text(strings or {}, name[2:], label, values), quote=True)
+        return html.escape(values[name], quote=True)
+
     expanded = PARTIAL_RE.sub(lambda m: partials[m.group(1)], source)
-    return VALUE_RE.sub(lambda m: html.escape(values[m.group(1)], quote=True), expanded)
+    return VALUE_RE.sub(value, expanded)
 
 
 # ---------------------------------------------------------------- headers
@@ -410,8 +476,9 @@ def build(root):
         for p in sorted(pdir.glob("*.html")):
             ensure_plain(p, pdir, f"src/partials/{p.name}")
             partials[p.stem] = read_text(p)
+    strings = load_strings(assets)
     for name, text in partials.items():
-        validate(text, f"partial {name}", partials, False)
+        validate(text, f"partial {name}", partials, False, strings)
 
     pages = []
     for r in site["routes"]:
@@ -425,7 +492,7 @@ def build(root):
             "canonical_url": site["base_url"] + r["path"], "title": r["title"],
             "description": r["description"], "h1": r["h1"],
         }
-        out = render(read_text(src), f"page {r['page']}", partials, values)
+        out = render(read_text(src), f"page {r['page']}", partials, values, strings)
         rel = r["path"].lstrip("/") + "index.html"
         files[rel] = out.encode("utf-8")
         pages.append(rel)
