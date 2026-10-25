@@ -1,6 +1,27 @@
 {
   "base_url": "https://resma.aiskaron.com",
   "version": "0.0.0",
+  "node_major": 24,
+  "budget": {
+    "html_gzip_kb": 15,
+    "css_gzip_kb": 15,
+    "js_gzip_kb": 25,
+    "first_view_gzip_kb": 50,
+    "engine_gzip_kb": 300,
+    "fonts_max_files": 2,
+    "fonts_total_kb": 80
+  },
   "verification_files": [],
-  "routes": []
+  "routes": [
+    {
+      "path": "/unir-pdf/",
+      "page": "unir-pdf",
+      "title": "Unir PDF",
+      "description": "Une varios PDF en uno solo en tu navegador.",
+      "h1": "Unir PDF",
+      "in_sitemap": true,
+      "cache": "revalidate",
+      "tool": "merge"
+    }
+  ]
 }
