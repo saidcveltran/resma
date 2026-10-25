@@ -29,3 +29,9 @@ export const OUTPUT_FALLBACK_MERGE = 'documento-unido.pdf';
 export const OUTPUT_FALLBACK_IMAGES = 'fotos.pdf';
 // Extensions removed from the first file's name before it becomes the base of the output name.
 export const KNOWN_INPUT_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'heic', 'heif'];
+
+// Status region (DESIGN 6.3, C4): progress text changes at most once per this interval.
+export const STATUS_THROTTLE_MS = 1000;
+
+// Total input above this many bytes shows a non-blocking warning before the job (DESIGN 6.7).
+export const LARGE_INPUT_BYTES = 100 * 1024 * 1024;

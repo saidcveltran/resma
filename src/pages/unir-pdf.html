@@ -10,9 +10,21 @@
 <div class="container">
 <h1>{{h1}}</h1>
 <p data-s="merge.lead"></p>
+<div class="tool-ui" data-tool-ui>
+<p data-s="merge.chooseHint"></p>
+<p><button type="button" data-choose data-s="common.chooseFiles"></button><input type="file" multiple hidden data-input></p>
+<ol class="file-list" data-list data-s-aria="common.listLabel" hidden></ol>
+<p><button type="button" data-action aria-disabled="false" data-s="merge.action"></button></p>
+<section class="result" data-result hidden>
+<h2 data-s="merge.resultTitle"></h2>
+<p data-result-slot></p>
+<p><button type="button" data-restart data-s="common.startOver"></button></p>
+</section>
+</div>
 {{partial:tool-area}}
 </div>
 </main>
 {{partial:footer}}
+<script type="module" src="{{assets_path}}/js/tools/merge.js"></script>
 </body>
 </html>
