@@ -7,6 +7,7 @@ export const A4_PT = Object.freeze({ width: 595.28, height: 841.89 });
 export const LETTER_PT = Object.freeze({ width: 612, height: 792 });
 export const SMALL_MARGIN_PT = 28.35; // 10 mm
 export const MAX_PAGE_PT = 14400; // the PDF limit per side
+export const MIN_PAGE_PT = 3; // ISO 32000 Annex C: the smallest page size viewers are required to accept
 export const PIXEL_TO_PT = 0.75; // 96 dpi pixels to points
 
 // Stored pixel (sx, sy), origin top left, to displayed (dx, dy), by orientation:
@@ -46,8 +47,10 @@ export function place(img, options) {
     // Page = displayed pixels x 0.75, no margin; scaled down when a side would pass the PDF limit.
     const shrink = Math.min(1, MAX_PAGE_PT / (Math.max(dw, dh) * PIXEL_TO_PT));
     scale = PIXEL_TO_PT * shrink;
-    pageW = Math.min(MAX_PAGE_PT, dw * scale);
-    pageH = Math.min(MAX_PAGE_PT, dh * scale);
+    // A side below MIN_PAGE_PT (a long thin strip) is raised to it. The image keeps its scale and is
+    // centred on that side, so it is not stretched; the page then has a blank border along that side.
+    pageW = Math.max(MIN_PAGE_PT, Math.min(MAX_PAGE_PT, dw * scale));
+    pageH = Math.max(MIN_PAGE_PT, Math.min(MAX_PAGE_PT, dh * scale));
     margin = 0;
   } else {
     const base = opts.size === 'letter' ? LETTER_PT : A4_PT;
