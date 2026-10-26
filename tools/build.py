@@ -550,6 +550,10 @@ def build(root):
             raise BuildError(f"site.json verification file {name} is not in static/")
 
     check_output_paths(files)
+    for rel in static:
+        if rel.lower().startswith("licencias/") and not LICENCE_FILE_RE.fullmatch("/" + rel):
+            raise BuildError(f"static/{rel} is not a licence text: files under static/licencias/ must be "
+                             f"/licencias/<name>.txt (letters, digits, dot, underscore, hyphen; lower-case .txt)")
     licence_files = sorted("/" + rel for rel in static if LICENCE_FILE_RE.fullmatch("/" + rel))
     headers = generate_headers(site["base_url"], [r["path"] for r in site["routes"]], sorted(root_files),
                                licence_files)

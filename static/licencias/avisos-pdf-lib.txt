@@ -1,0 +1,207 @@
+Notices found in the source files of @cantoo/pdf-lib 2.11.0 and the packages it bundles.
+Each notice below is copied verbatim from the source map (sourcesContent) of dist/pdf-lib.esm.min.js.
+
+=== node_modules/culori/src/okhsl/helpers.js, node_modules/culori/src/okhsl/convertOklabToOkhsl.js, node_modules/culori/src/okhsl/convertOkhslToOklab.js, node_modules/culori/src/okhsv/convertOklabToOkhsv.js
+
+/*
+	Adapted from code by Björn Ottosson,
+	released under the MIT license:
+
+	Copyright (c) 2021 Björn Ottosson
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy of
+	this software and associated documentation files (the "Software"), to deal in
+	the Software without restriction, including without limitation the rights to
+	use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+	of the Software, and to permit persons to whom the Software is furnished to do
+	so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+ */
+
+=== node_modules/culori/src/okhsv/convertOkhsvToOklab.js
+
+/*
+	Copyright (c) 2021 Björn Ottosson
+
+	Permission is hereby granted, free of charge, to any person obtaining a copy of
+	this software and associated documentation files (the "Software"), to deal in
+	the Software without restriction, including without limitation the rights to
+	use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+	of the Software, and to permit persons to whom the Software is furnished to do
+	so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+ */
+
+=== es/utils/base64.js
+
+/*
+ * The `chars`, `lookup`, `encode`, and `decode` members of this file are
+ * licensed under the following:
+ *
+ *     base64-arraybuffer
+ *     https://github.com/niklasvh/base64-arraybuffer
+ *
+ *     Copyright (c) 2012 Niklas von Hertzen
+ *     Licensed under the MIT license.
+ *
+ */
+
+=== es/packages/standard-fonts/utils.js
+
+/*
+ * The `chars`, `lookup`, and `decodeFromBase64` members of this file are
+ * licensed under the following:
+ *
+ *     base64-arraybuffer
+ *     https://github.com/niklasvh/base64-arraybuffer
+ *
+ *     Copyright (c) 2012 Niklas von Hertzen
+ *     Licensed under the MIT license.
+ *
+ */
+
+=== node_modules/tslib/tslib.es6.mjs
+
+/******************************************************************************
+Copyright (c) Microsoft Corporation.
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+***************************************************************************** */
+/* global Reflect, Promise, SuppressedError, Symbol, Iterator */
+
+=== es/core/streams/Stream.js
+
+/*
+ * Copyright 2012 Mozilla Foundation
+ *
+ * The Stream class contained in this file is a TypeScript port of the
+ * JavaScript Stream class in Mozilla's pdf.js project, made available
+ * under the Apache 2.0 open source license.
+ */
+
+=== es/core/streams/DecodeStream.js
+
+/*
+ * Copyright 2012 Mozilla Foundation
+ *
+ * The DecodeStream class contained in this file is a TypeScript port of the
+ * JavaScript DecodeStream class in Mozilla's pdf.js project, made available
+ * under the Apache 2.0 open source license.
+ */
+// Lots of DecodeStreams are created whose buffers are never used.  For these
+// we share a single empty buffer. This is (a) space-efficient and (b) avoids
+// having special cases that would be required if we used |null| for an empty
+// buffer.
+
+=== es/core/streams/Ascii85Stream.js
+
+/*
+ * Copyright 2012 Mozilla Foundation
+ *
+ * The Ascii85Stream class contained in this file is a TypeScript port of the
+ * JavaScript Ascii85Stream class in Mozilla's pdf.js project, made available
+ * under the Apache 2.0 open source license.
+ */
+
+=== es/core/streams/AsciiHexStream.js
+
+/*
+ * Copyright 2012 Mozilla Foundation
+ *
+ * The AsciiHexStream class contained in this file is a TypeScript port of the
+ * JavaScript AsciiHexStream class in Mozilla's pdf.js project, made available
+ * under the Apache 2.0 open source license.
+ */
+
+=== es/core/streams/FlateStream.js
+
+/*
+ * Copyright 1996-2003 Glyph & Cog, LLC
+ *
+ * The flate stream implementation contained in this file is a JavaScript port
+ * of XPDF's implementation, made available under the Apache 2.0 open source
+ * license.
+ */
+/*
+ * Copyright 2012 Mozilla Foundation
+ *
+ * The FlateStream class contained in this file is a TypeScript port of the
+ * JavaScript FlateStream class in Mozilla's pdf.js project, made available
+ * under the Apache 2.0 open source license.
+ */
+/* tslint:disable  no-conditional-assignment */
+
+=== es/core/streams/LZWStream.js
+
+/*
+ * Copyright 2012 Mozilla Foundation
+ *
+ * The LZWStream class contained in this file is a TypeScript port of the
+ * JavaScript LZWStream class in Mozilla's pdf.js project, made available
+ * under the Apache 2.0 open source license.
+ */
+
+=== es/core/streams/RunLengthStream.js
+
+/*
+ * Copyright 2012 Mozilla Foundation
+ *
+ * The RunLengthStream class contained in this file is a TypeScript port of the
+ * JavaScript RunLengthStream class in Mozilla's pdf.js project, made available
+ * under the Apache 2.0 open source license.
+ */
+
+=== es/core/crypto.js
+
+/* Copyright 2012 Mozilla Foundation
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+/* tslint:disable */
+
+=== es/api/svgPath.js
+
+// Originated from pdfkit Copyright (c) 2014 Devon Govett
+// https://github.com/foliojs/pdfkit/blob/1e62e6ffe24b378eb890df507a47610f4c4a7b24/lib/path.js
+// MIT LICENSE
+// Updated for pdf-lib & TypeScript by Jeremy Messenger
+
