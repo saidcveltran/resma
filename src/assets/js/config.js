@@ -39,3 +39,6 @@ export const LARGE_INPUT_BYTES = 100 * 1024 * 1024;
 // Thumbnails (DESIGN 6.5, 6.7, CS-4): above this many images, or above LARGE_INPUT_BYTES in total, the rows show
 // numbered tiles instead of thumbnails, to spare decoded-bitmap memory on phones.
 export const THUMBNAIL_MAX_IMAGES = 30;
+// Also above this many pixels in total (width x height of the listed images; 4 images of 4000 x 4000 sit exactly on it):
+// a thumbnail is a decoded bitmap of the whole picture, so the sum is what a phone has to hold.
+export const THUMBNAIL_MAX_PIXELS = 64000000;

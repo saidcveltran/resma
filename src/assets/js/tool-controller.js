@@ -10,7 +10,7 @@ import { t } from './strings.es.js';
 import { engine, EngineError } from './engine-client.js';
 import { isResourceError } from './worker/errors.js';
 import { sniff } from './sniff.js';
-import { LARGE_INPUT_BYTES, THUMBNAIL_MAX_IMAGES } from './config.js';
+import { LARGE_INPUT_BYTES, THUMBNAIL_MAX_IMAGES, THUMBNAIL_MAX_PIXELS } from './config.js';
 import { createFileList } from './file-list.js';
 import { createStatus, isolate } from './status.js';
 import { createDownload, formatSize } from './download.js';
@@ -79,7 +79,8 @@ export function createTool(def, root = document) {
     if (!def.thumbnails) return;
     const entries = list.entries();
     const total = entries.reduce((n, e) => n + e.size, 0);
-    const room = entries.length <= THUMBNAIL_MAX_IMAGES && total <= LARGE_INPUT_BYTES;
+    const pixels = entries.reduce((n, e) => n + (e.pixels || 0), 0);
+    const room = entries.length <= THUMBNAIL_MAX_IMAGES && total <= LARGE_INPUT_BYTES && pixels <= THUMBNAIL_MAX_PIXELS;
     for (const e of entries) {
       const type = def.thumbnails.types[e.kind];
       const wanted = room && e.status === 'ready' && e.decodable === true && typeof type === 'string';
@@ -110,7 +111,10 @@ export function createTool(def, root = document) {
   // Any change of the list ends the current result and clears a stale error.
   function listChanged() {
     jobSeq += 1;
-    if (busy) engine.cancel(); // a job in flight is dropped: its worker goes now, not when it answers
+    // A job in flight is dropped: its worker goes now, not when it answers. Today the list cannot change while
+    // busy (addFiles, the row buttons and the options are all refused), so this runs only for restart. If a later
+    // change lets the list change mid-job, a new file's add-time inspect (a worker call) would be cancelled here too.
+    if (busy) engine.cancel();
     download.revoke();
     showResult(false);
     status.clearError();

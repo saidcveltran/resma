@@ -187,9 +187,12 @@ const isRefusedChunk = (b, at) => typeIs(b, at, 'IHDR') || typeIs(b, at, 'acTL')
 // Head parser: size, depth and colour type from IHDR, then a walk over the chunk headers inside the
 // first 1 MiB (the walk continues past the first IDAT, so a second IHDR or an APNG chunk right after
 // the image data is seen). The cost is bounded by SCAN_CAP_BYTES; the rest is checkPngChunks' job.
-export function readPngInfo(input) {
+// `fileLength` (optional): the real size of the file when `input` is only its first bytes (the page reads 1 MiB
+// on add). A chunk that runs past it is DAMAGED; one that runs past the window but not past the file is fine.
+export function readPngInfo(input, fileLength) {
   if (!isBytes(input)) return damaged(0);
   const len = input.length;
+  const total = Number.isSafeInteger(fileLength) && fileLength > len ? fileLength : len;
   const b = input;
   const head = readPngHead(b, len);
   if (head.ok === false) return head;
@@ -201,12 +204,13 @@ export function readPngInfo(input) {
   let sawData = false; // an IDAT was seen
   // A chunk is 4 bytes of length, 4 of type, data, 4 of CRC. Each pass moves at least 12 bytes forward.
   while (pos < SCAN_CAP_BYTES) {
-    if (pos === len && sawData) return result(pos); // the file ends right after the image data
+    if (pos === total && sawData) return result(pos); // the file ends right after the image data
     if (pos + 8 > SCAN_CAP_BYTES) break; // the next chunk header is not entirely below the cap
-    if (pos + PNG_MIN_CHUNK > len) return damaged(Math.min(len, SCAN_CAP_BYTES));
+    if (pos + PNG_MIN_CHUNK > total) return damaged(Math.min(total, SCAN_CAP_BYTES));
+    if (pos + 8 > len) break; // the window ends inside this header; the file goes on
     const size = u32(b, pos);
     const end = pos + PNG_MIN_CHUNK + size;
-    if (end > len) return damaged(Math.min(len, SCAN_CAP_BYTES)); // the length points past the file
+    if (end > total) return damaged(Math.min(total, SCAN_CAP_BYTES)); // the length points past the file
     if (isRefusedChunk(b, pos + 4)) return damaged(pos + 8);
     if (typeIs(b, pos + 4, 'IDAT')) {
       sawData = true;

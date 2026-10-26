@@ -38,33 +38,70 @@ const typeAt = (b, at) => String.fromCharCode(b[at], b[at + 1], b[at + 2], b[at 
 // ends the output at the first EOI that follows the first SOS. A segment is 0xFF, a marker, a length that
 // counts its own two bytes, and the payload; inside the compressed data every 0xFF is followed by a zero or
 // a restart marker, so a marker with a length is always a real segment and the first EOI marker is the end of
-// the image. An APPn or COM whose length runs past the end of the file is DAMAGED. Each pass moves forward,
-// so the cost is bounded by the file length.
+// the image. The three kept segments are cut to what they need (decision 36): JFIF to its 16-byte header with
+// a 0 x 0 thumbnail, Adobe to 14 bytes, and the ICC chunks stay only if together they parse as one ICC
+// profile (decision 47). DAMAGED: an APPn or COM that runs past the end of the file; a byte that is not a
+// marker, or a segment shorter than its own length field, before the first scan; no EOI after the scan (text
+// after the scan cannot be told from image data). Each pass moves forward, so the cost is bounded by the file.
 const KEEP_APP = new Map([
-  [0xe0, Uint8Array.from([0x4a, 0x46, 0x49, 0x46, 0x00])], // JFIF\0
-  [0xe2, Uint8Array.from([0x49, 0x43, 0x43, 0x5f, 0x50, 0x52, 0x4f, 0x46, 0x49, 0x4c, 0x45, 0x00])], // ICC_PROFILE\0
+  [0xe0, Uint8Array.from([0x4a, 0x46, 0x49, 0x46, 0x00])], // JFIF, then a zero byte
+  [0xe2, Uint8Array.from([0x49, 0x43, 0x43, 0x5f, 0x50, 0x52, 0x4f, 0x46, 0x49, 0x4c, 0x45, 0x00])], // ICC_PROFILE, then a zero byte
   [0xee, Uint8Array.from([0x41, 0x64, 0x6f, 0x62, 0x65])], // Adobe
 ]);
 const startsWith = (b, at, prefix) => at + prefix.length <= b.length && prefix.every((v, k) => b[at + k] === v);
 
+// JFIF and Adobe: null keeps the segment as it is, otherwise the bytes that replace it (none: dropped).
+function shorten(b, marker, size, at) {
+  const head = marker === 0xe0 ? [0xff, 0xe0, 0, 16] : [0xff, 0xee, 0, 14];
+  if (marker === 0xee ? size <= 14 : size === 16 && b[at + 12] === 0 && b[at + 13] === 0) return null;
+  if (size < head[3]) return new Uint8Array(0); // too short to be what it says
+  const out = new Uint8Array(head[3] + 2);
+  out.set(head);
+  out.set(b.subarray(at, at + 12), 4); // the rest of a JFIF header (the thumbnail size) stays 0 x 0
+  return out;
+}
+
+// True when the chunks of an ICC_PROFILE (sequence numbers 1..n, each once) join into a profile whose size field
+// equals its length and that has `acsp` at offset 36.
+function parsesAsIcc(b, chunks) {
+  const parts = new Array(chunks.length).fill(null);
+  let total = 0;
+  for (const c of chunks) {
+    const seq = b[c.at + 12];
+    if (c.size < 16 || b[c.at + 13] !== chunks.length || seq < 1 || seq > chunks.length || parts[seq - 1]) return false;
+    parts[seq - 1] = b.subarray(c.at + 14, c.to);
+    total += parts[seq - 1].length;
+  }
+  if (total < 128) return false;
+  const p = new Uint8Array(total);
+  let at = 0;
+  for (const part of parts) { p.set(part, at); at += part.length; }
+  return u32(p, 0) === total && typeAt(p, 36) === 'acsp';
+}
+
 export function stripJpegMetadata(b) {
   const len = b.length;
-  const kept = [];
-  let from = 0;
+  let cuts = []; // { from, to, rep }: bytes [from, to) are replaced by rep (nothing when rep is null)
+  const icc = [];
   let end = len;
   let sawScan = false;
+  let ended = false;
   let i = 2;
   while (i < len) {
-    if (b[i] !== 0xff) { i += 1; continue; }
+    if (b[i] !== 0xff) {
+      if (!sawScan) throw new EngineError('DAMAGED'); // a stray byte between the headers
+      i += 1;
+      continue;
+    }
     let j = i + 1;
     while (j < len && b[j] === 0xff) j += 1; // fill bytes
     if (j + 2 >= len && !(sawScan && b[j] === 0xd9)) break; // no room for a marker and its length
     const marker = b[j];
-    if (marker === 0xd9 && sawScan) { end = j + 1; break; } // the end of the image: nothing after it is kept
+    if (marker === 0xd9 && sawScan) { end = j + 1; ended = true; break; } // the end of the image: nothing after it is kept
     if (marker === 0x00 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) { i = j + 1; continue; }
     const size = (b[j + 1] << 8) | b[j + 2];
     const isApp = (marker >= 0xe0 && marker <= 0xef) || marker === 0xfe;
-    if (size < 2) { i = j + 1; continue; }
+    if (size < 2) throw new EngineError('DAMAGED'); // a length shorter than its own two bytes: text follows
     if (j + 1 + size > len) {
       if (isApp) throw new EngineError('DAMAGED'); // a metadata segment that runs past the end of the file
       i = j + 1;
@@ -72,17 +109,32 @@ export function stripJpegMetadata(b) {
     }
     const segmentEnd = j + 1 + size;
     if (marker === 0xda) sawScan = true;
-    if (isApp && !(KEEP_APP.has(marker) && startsWith(b, j + 3, KEEP_APP.get(marker)))) {
-      kept.push(b.subarray(from, i));
-      from = segmentEnd;
+    if (isApp) {
+      if (!(KEEP_APP.has(marker) && startsWith(b, j + 3, KEEP_APP.get(marker)))) {
+        cuts.push({ from: i, to: segmentEnd, rep: null });
+      } else if (marker === 0xe2) {
+        icc.push({ from: i, to: segmentEnd, rep: null, at: j + 3, size });
+        cuts.push(icc[icc.length - 1]);
+      } else {
+        const rep = shorten(b, marker, size, j + 3);
+        if (rep) cuts.push({ from: i, to: segmentEnd, rep });
+      }
     }
     i = segmentEnd;
   }
-  if (kept.length === 0) return end === len ? b : b.subarray(0, end);
-  kept.push(b.subarray(from, end));
-  const out = new Uint8Array(kept.reduce((n, p) => n + p.length, 0));
+  if (!ended) throw new EngineError('DAMAGED');
+  if (icc.length > 0 && parsesAsIcc(b, icc)) cuts = cuts.filter((c) => !icc.includes(c)); // a whole profile stays as it is
+  if (cuts.length === 0) return end === len ? b : b.subarray(0, end);
+  const out = new Uint8Array(cuts.reduce((n, c) => n + (c.rep ? c.rep.length : 0) - (c.to - c.from), end));
   let at = 0;
-  for (const p of kept) { out.set(p, at); at += p.length; }
+  let from = 0;
+  for (const c of cuts) {
+    out.set(b.subarray(from, c.from), at);
+    at += c.from - from;
+    if (c.rep) { out.set(c.rep, at); at += c.rep.length; }
+    from = c.to;
+  }
+  out.set(b.subarray(from, end), at);
   return out;
 }
 

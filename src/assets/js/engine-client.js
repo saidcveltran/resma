@@ -97,10 +97,13 @@ function createEngine() {
     setState('failed');
   }
 
-  function spawn() {
-    readyPromise = new Promise((res, rej) => { resolveReady = res; rejectReady = rej; });
-    readyPromise.catch(() => {}); // a failed start is reported through the state and call()
-    setState('preparing');
+  // `again` marks the one automatic respawn after a start timeout: it keeps the same ready() promise and state.
+  function spawn(again = false) {
+    if (!again) {
+      readyPromise = new Promise((res, rej) => { resolveReady = res; rejectReady = rej; });
+      readyPromise.catch(() => {}); // a failed start is reported through the state and call()
+      setState('preparing');
+    }
     let w;
     try {
       w = new Worker(policy ? policy.createScriptURL(WORKER_URL) : WORKER_URL, { type: 'module' });
@@ -110,11 +113,13 @@ function createEngine() {
     }
     worker = w;
     let started = false;
-    // A worker that never says ready (or says nothing at all) must not leave ready() waiting.
+    // A worker that never says ready (or says nothing at all) must not leave ready() waiting: a cold start can
+    // stall under load (decision 48), so the first silence earns one new worker; a second ends in the failed
+    // state. ready() waits at most 2 x START_TIMEOUT_MS.
     const startTimer = setTimeout(() => {
       if (w !== worker || started) return;
       dropWorker();
-      fail();
+      if (again) fail(); else spawn(true);
     }, START_TIMEOUT_MS);
     w.onmessage = (ev) => {
       if (w !== worker) return;

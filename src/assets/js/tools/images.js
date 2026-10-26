@@ -1,6 +1,6 @@
 // C13 tool definition for "JPG a PDF". This module is the page's entry for the tool: it starts it.
 //
-// Photos are checked on add from the head only, with the bounded parsers (CS-5); nothing is decoded. A PNG over
+// Photos are checked on add from the head only (the first 1 MiB), with the bounded parsers (CS-5); nothing is decoded. A PNG over
 // the pixel cap is a row error; a JPEG over it is converted without a decode and gets a tile, not a thumbnail.
 import { outputName } from '../filename.js';
 import { bootTool } from '../tool-controller.js';
@@ -11,11 +11,12 @@ async function inspectImage(file, kind) {
   if (kind === 'jpeg') {
     const info = readJpegInfo(new Uint8Array(await file.slice(0, SCAN_CAP_BYTES).arrayBuffer()));
     if (!info.ok) throw new EngineError(info.code);
-    return { decodable: !info.tooBigToDecode && info.pixels <= PIXEL_CAP };
+    return { decodable: !info.tooBigToDecode && info.pixels <= PIXEL_CAP, pixels: info.pixels };
   }
-  const info = readPngInfo(new Uint8Array(await file.arrayBuffer()));
+  // The real size goes along, so a chunk past the end of the file is damaged; the whole file is read when the job runs.
+  const info = readPngInfo(new Uint8Array(await file.slice(0, SCAN_CAP_BYTES).arrayBuffer()), file.size);
   if (!info.ok) throw new EngineError(info.code);
-  return { decodable: info.pixels <= PIXEL_CAP };
+  return { decodable: info.pixels <= PIXEL_CAP, pixels: info.pixels };
 }
 
 const options = (panel) => {
