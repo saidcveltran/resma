@@ -279,6 +279,8 @@ img.thumb { display: block; object-fit: contain; background: var(--color-surface
   background: var(--color-surface); padding: var(--space-6) 0; font-size: var(--font-size-sm);
 }
 .site-footer p { margin: 0 0 var(--space-2); }
+.footer-nav ul { display: flex; flex-wrap: wrap; gap: 0 var(--space-4); list-style: none; margin: 0 0 var(--space-2); padding: 0; }
+.footer-nav a { display: inline-flex; align-items: center; min-height: var(--size-target-min); }
 .made-by { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--color-text-muted); }
 .made-by img { display: block; height: var(--space-5); width: var(--space-5); }
 
