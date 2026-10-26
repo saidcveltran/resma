@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+{{partial:head}}
+{{partial:seo}}
+</head>
+<body>
+{{partial:icons}}
+{{partial:header}}
+<main id="main" tabindex="-1">
+<div class="container">
+<div class="hero">
+<h1>{{h1}}</h1>
+<p class="lead">{{s:home.lead}}</p>
+<p class="privacy-line"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg>{{s:privacy.line}}</p>
+</div>
+<section class="home-tools" aria-labelledby="tools-title">
+<h2 id="tools-title">{{s:home.toolsTitle}}</h2>
+<ul class="tool-cards">
+<li><a class="tool-card" href="/unir-pdf/"><svg class="icon icon-lg" aria-hidden="true" focusable="false"><use href="#i-file-pdf"/></svg><span class="tool-card-name">{{s:nav.merge}}</span><span class="tool-card-text">{{s:home.mergeCard}}</span><span class="tool-card-open">{{s:home.open}}</span></a></li>
+<li><a class="tool-card" href="/jpg-a-pdf/"><svg class="icon icon-lg" aria-hidden="true" focusable="false"><use href="#i-image"/></svg><span class="tool-card-name">{{s:nav.images}}</span><span class="tool-card-text">{{s:home.imagesCard}}</span><span class="tool-card-open">{{s:home.open}}</span></a></li>
+</ul>
+</section>
+<p class="more"><a class="more-link" href="/como-funciona/">{{s:privacy.moreLink}}</a></p>
+</div>
+</main>
+{{partial:footer}}
+</body>
+</html>

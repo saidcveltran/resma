@@ -14,10 +14,19 @@
   "verification_files": [],
   "routes": [
     {
+      "path": "/",
+      "page": "index",
+      "title": "resma: herramientas de PDF en tu dispositivo",
+      "description": "Une PDF y convierte fotos JPG a PDF gratis, sin registro y sin subir nada: todo ocurre en tu dispositivo.",
+      "h1": "Herramientas de PDF sin subir tus archivos",
+      "in_sitemap": true,
+      "cache": "revalidate"
+    },
+    {
       "path": "/unir-pdf/",
       "page": "unir-pdf",
-      "title": "Unir PDF",
-      "description": "Une varios PDF en uno solo en tu navegador.",
+      "title": "Unir PDF gratis, sin subir tus archivos | resma",
+      "description": "Une varios PDF en uno solo, ordénalos y descarga el resultado. Gratis, sin registro y sin subir nada: todo ocurre en tu dispositivo.",
       "h1": "Unir PDF",
       "in_sitemap": true,
       "cache": "revalidate",
@@ -26,12 +35,26 @@
     {
       "path": "/jpg-a-pdf/",
       "page": "jpg-a-pdf",
-      "title": "JPG a PDF",
-      "description": "Convierte fotos JPG o PNG en un solo PDF en tu navegador.",
+      "title": "JPG a PDF gratis, sin subir tus fotos | resma",
+      "description": "Convierte fotos JPG o PNG en un solo PDF, en el orden que quieras. Gratis y sin registro; las imágenes no salen de tu dispositivo.",
       "h1": "JPG a PDF",
       "in_sitemap": true,
       "cache": "revalidate",
       "tool": "images"
+    },
+    {
+      "path": "/como-funciona/",
+      "page": "como-funciona",
+      "title": "Cómo funciona resma: tus archivos no salen de tu dispositivo",
+      "description": "Qué ocurre con tus archivos en resma y cómo puedes comprobarlo tú mismo: sin subidas, sin cuentas y sin cookies.",
+      "h1": "Cómo funciona",
+      "in_sitemap": true,
+      "cache": "revalidate"
     }
-  ]
+  ],
+  "not_found": {
+    "title": "Página no encontrada | resma",
+    "description": "Esta dirección no existe en resma.",
+    "h1": "No encontramos esta página"
+  }
 }

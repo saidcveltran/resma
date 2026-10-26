@@ -306,3 +306,26 @@ img.thumb { display: block; object-fit: contain; background: var(--color-surface
 @media (forced-colors: active) {
   .btn, .dropzone, .file-row, .alert, .result, .options, .field select, img.thumb { border: var(--size-border-width-strong) solid CanvasText; }
 }
+
+/* home and not-found pages */
+.home-tools h2 { margin-top: var(--space-8); }
+.tool-cards { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: grid; gap: var(--space-4); }
+.tool-cards li { min-width: 0; }
+.tool-card {
+  display: grid; gap: var(--space-1); align-content: start; min-height: 7.5rem;
+  padding: var(--space-5); border-radius: var(--radius-lg);
+  background: var(--color-surface); color: var(--color-text);
+  border: var(--size-border-width-strong) solid var(--color-border-strong);
+  box-shadow: var(--shadow-sm); text-decoration: none;
+}
+.tool-card:hover { background: var(--color-primary-subtle); color: var(--color-text); border-color: var(--color-primary); }
+.tool-card .icon-lg { color: var(--color-primary); margin-bottom: var(--space-1); }
+.tool-card-name { font-family: var(--font-display); font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold); line-height: var(--line-height-tight); overflow-wrap: anywhere; }
+.tool-card-text { color: var(--color-text-muted); overflow-wrap: anywhere; }
+.tool-card-open { margin-top: var(--space-2); font-weight: var(--font-weight-semibold); color: var(--color-link); }
+.more { margin: var(--space-8) 0 0; }
+.more-link { display: inline-flex; align-items: center; min-height: var(--size-target-min); }
+.hero .more { margin-top: var(--space-6); }
+@media (min-width: 640px) {
+  .tool-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

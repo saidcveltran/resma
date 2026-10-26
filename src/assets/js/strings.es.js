@@ -182,7 +182,18 @@ export const strings = {
     "images": {
       "title": "JPG a PDF gratis, sin subir tus fotos | resma",
       "description": "Convierte fotos JPG o PNG en un solo PDF, en el orden que quieras. Gratis y sin registro; las imágenes no salen de tu dispositivo."
+    },
+    "how": {
+      "title": "Cómo funciona resma: tus archivos no salen de tu dispositivo",
+      "description": "Qué ocurre con tus archivos en resma y cómo puedes comprobarlo tú mismo: sin subidas, sin cuentas y sin cookies."
     }
+  },
+  "notFound": {
+    "title": "Página no encontrada | resma",
+    "description": "Esta dirección no existe en resma.",
+    "h1": "No encontramos esta página",
+    "body": "La dirección no existe o ha cambiado. Vuelve al inicio o abre una de las herramientas.",
+    "homeLink": "Volver al inicio"
   },
   "a11y": {
     "dropZone": "Zona para soltar archivos. También puedes usar el botón Elegir archivos.",

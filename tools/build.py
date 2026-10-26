@@ -176,6 +176,9 @@ def load_site(root):
     vf = site.get("verification_files", [])
     if not isinstance(vf, list) or not all(isinstance(x, str) for x in vf):
         raise BuildError("site.json field verification_files must be a list of strings", EXIT_ENV)
+    nf = site.get("not_found")
+    if not isinstance(nf, dict) or not all(isinstance(nf.get(k), str) for k in ("title", "description", "h1")):
+        raise BuildError("site.json field not_found needs the text fields title, description and h1", EXIT_ENV)
     if not BASE_URL_RE.fullmatch(site["base_url"]):
         raise BuildError("site.json base_url must be an https origin without a path", EXIT_ENV)
     seen = set()
@@ -506,6 +509,20 @@ def build(root):
         files[rel] = out.encode("utf-8")
         pages.append(rel)
 
+    # The not-found page is not a route: no canonical, not in the sitemap, served by Pages for unknown paths.
+    nf_src = root / "src" / "pages" / "404.html"
+    if not nf_src.is_file():
+        raise BuildError("missing src/pages/404.html")
+    ensure_plain(nf_src, root / "src", "src/pages/404.html")
+    nf = site["not_found"]
+    nf_values = {
+        "base_url": site["base_url"], "version": site["version"], "build_id": build_id,
+        "assets_path": "/" + assets_prefix.rstrip("/"), "route": "/404.html",
+        "canonical_url": "", "title": nf["title"], "description": nf["description"], "h1": nf["h1"],
+    }
+    files["404.html"] = render(read_text(nf_src), "page 404", partials, nf_values, strings).encode("utf-8")
+    pages.append("404.html")
+
     static = collect(root / "static", root, "static", names=True)
     root_files = []
     for rel, data in static.items():
@@ -525,6 +542,8 @@ def build(root):
         files["sitemap.xml"] = ("\n".join(sitemap) + "\n").encode("utf-8")
         root_files.append("/sitemap.xml")
     for name in site.get("verification_files", []):
+        if not ROOT_FILE_RE.fullmatch("/" + name):
+            raise BuildError(f"site.json verification file {name!r} must be a plain file name for the site root")
         if name not in static:
             raise BuildError(f"site.json verification file {name} is not in static/")
 

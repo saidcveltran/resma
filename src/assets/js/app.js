@@ -46,6 +46,7 @@ function afterLoadAndIdle(fn) {
 function boot() {
   markCurrentTool();
   const status = document.querySelector('[data-status]');
+  if (!status) return; // pages without a tool (home, not found, text pages) start no engine
   const alertRegion = document.querySelector('[data-alert]');
   const retry = document.querySelector('[data-engine-retry]');
   if (typeof Worker === 'undefined') {
