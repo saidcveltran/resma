@@ -42,6 +42,7 @@ function createEngine() {
   let resolveReady = null;
   let rejectReady = null;
   let nextId = 1;
+  let generation = 0; // cancel() bumps it: a call that began before and is still waiting for the worker is abandoned
   const pending = new Map();
   const listeners = new Set();
 
@@ -158,9 +159,11 @@ function createEngine() {
       return readyPromise;
     },
     // The job token was invalidated (restart, list or option change): the worker goes now and a fresh one starts.
-    cancel() { if (pending.size > 0) recycle(); },
+    cancel() { generation += 1; if (pending.size > 0) recycle(); },
     async call(op, payload = {}, onProgress = null, transfer = []) {
+      const began = generation;
       try { await this.ready(); } catch { throw new EngineError('INTERNAL'); }
+      if (began !== generation) throw new EngineError('INTERNAL', undefined, true); // cancelled while the worker started: never sent
       return new Promise((resolve, reject) => {
         const id = nextId++;
         pending.set(id, { resolve, reject, onProgress, timer: 0 });

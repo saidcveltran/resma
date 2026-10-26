@@ -46,6 +46,31 @@ export function readFiles(files) {
   });
 }
 
+// The library counts pages by recursion, so a page tree that lists itself ends in a stack overflow, which looks like a
+// resource limit. Walk /Kids ourselves, without recursion: a node reached again from itself is a cycle (DAMAGED, in
+// milliseconds), and more visits than the file has bytes cannot be an honest tree. A tree that is merely very deep passes
+// this walk and still overflows the library's own recursion: that stays TOO_LARGE.
+function checkPageTree(lib, doc, budget) {
+  const { PDFDict, PDFArray, PDFRef, PDFName } = lib;
+  const ctx = doc.context;
+  const onPath = new Set();
+  const stack = [{ v: doc.catalog.get(PDFName.of('Pages')) }];
+  let visits = 0;
+  while (stack.length > 0) {
+    const { v, leave } = stack.pop();
+    if (leave) { onPath.delete(v); continue; }
+    if (!(v instanceof PDFRef)) continue;
+    if (onPath.has(v.tag) || ++visits > budget) return false;
+    const node = ctx.lookup(v);
+    const kids = node instanceof PDFDict ? node.lookup(PDFName.of('Kids')) : undefined;
+    if (!(kids instanceof PDFArray)) continue;
+    onPath.add(v.tag);
+    stack.push({ v: v.tag, leave: true });
+    for (let i = kids.size() - 1; i >= 0; i--) stack.push({ v: kids.get(i) });
+  }
+  return true;
+}
+
 // Loads one PDF and applies the damage checks. Returns the document.
 // Owner-restricted files open with the empty password and are used; files that need a password
 // to open are PROTECTED. `ignoreEncryption` is never used: it yields undecrypted pages.
@@ -75,6 +100,7 @@ export async function loadPdf(lib, bytes, index) {
     }
     // The page tree's own count must equal the pages the recovery found.
     const root = doc.catalog.lookup(PDFName.of('Pages'), PDFDict);
+    if (!checkPageTree(lib, doc, bytes.length)) throw new EngineError('DAMAGED', index);
     const count = root.lookup(PDFName.of('Count'));
     const pages = doc.getPageCount();
     if (!(count instanceof PDFNumber) || count.asNumber() !== pages || pages < 1) {

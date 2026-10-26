@@ -28,6 +28,9 @@ const ACTIVE_KEYS = ['AA', 'JS', 'JavaScript', 'OpenAction', 'XFA', 'EF', 'AF', 
 const ACTIVE_ACTIONS = new Set(['JavaScript', 'Launch', 'SubmitForm', 'ImportData', 'GoToR', 'GoToE', 'Named',
   'Hide', 'Rendition', 'SetOCGState', 'Thread', 'ResetForm', 'Movie', 'Sound', 'Trans', 'GoTo3DView',
   'RichMediaExecute']);
+// Dictionaries whose keys are names the file chose (resource names, Type3 glyph names): a resource or a glyph called
+// /JS or /AA is content, not an active key. Their own keys are left alone; what they point at is swept as usual.
+const NAME_MAP_KEYS = new Set([...RESOURCE_KEYS.filter((k) => k !== 'ProcSet'), 'CharProcs']);
 const PLAIN_DEPTH = 6;
 // A link target must be an ordinary web, mail or phone address.
 const SAFE_URI = /^(https?|mailto|tel):/i;
@@ -249,39 +252,44 @@ function sweep(lib, ctx, pages) {
   const { PDFDict, PDFArray, PDFRef, PDFStream } = lib;
   const ours = new Set(pages.map((p) => p.ref.tag));
   const seen = new Set();
-  const stack = pages.map((p) => p.ref);
+  const stack = pages.map((p) => [p.ref, false]); // [reference, reached as the value of a name-map key]
   const foreign = (ref) => {
     const t = typeName(lib, ctx.lookup(ref) instanceof PDFStream ? ctx.lookup(ref).dict : ctx.lookup(ref));
     return t === 'Catalog' || t === 'Pages' || (t === 'Page' && !ours.has(ref.tag));
   };
   while (stack.length > 0) {
-    const ref = stack.pop();
-    if (seen.has(ref.tag)) continue;
-    seen.add(ref.tag);
+    const [ref, asMap] = stack.pop();
+    const id = asMap ? `${ref.tag}m` : String(ref.tag); // reached both ways: swept as a plain dictionary too
+    if (seen.has(id)) continue;
+    seen.add(id);
     const top = ctx.lookup(ref);
-    const visit = (o) => {
+    const visit = (o, isMap = false) => {
       const dict = o instanceof PDFStream ? o.dict : o;
       if (dict instanceof PDFDict) {
-        for (const name of ACTIVE_KEYS) dict.delete(key(lib, name));
-        const s = dict.lookup(key(lib, 'S'));
-        if (s instanceof lib.PDFName && ACTIVE_ACTIONS.has(s.decodeText())) {
-          for (const k of dict.keys()) dict.delete(k);
+        const nameMap = isMap && !(o instanceof PDFStream);
+        if (!nameMap) {
+          for (const name of ACTIVE_KEYS) dict.delete(key(lib, name));
+          const s = dict.lookup(key(lib, 'S'));
+          if (s instanceof lib.PDFName && ACTIVE_ACTIONS.has(s.decodeText())) {
+            for (const k of dict.keys()) dict.delete(k);
+          }
         }
         for (const [k, v] of dict.entries()) {
+          const childMap = !nameMap && NAME_MAP_KEYS.has(k.decodeText());
           if (v instanceof PDFRef) {
-            if (foreign(v)) dict.delete(k); else stack.push(v);
-          } else if (v instanceof PDFDict || v instanceof PDFArray) visit(v);
+            if (foreign(v)) dict.delete(k); else stack.push([v, childMap]);
+          } else if (v instanceof PDFDict || v instanceof PDFArray) visit(v, childMap);
         }
       } else if (o instanceof PDFArray) {
         for (let i = o.size() - 1; i >= 0; i--) {
           const v = o.get(i);
           if (v instanceof PDFRef) {
-            if (foreign(v)) o.remove(i); else stack.push(v);
+            if (foreign(v)) o.remove(i); else stack.push([v, false]);
           } else if (v instanceof PDFDict || v instanceof PDFArray) visit(v);
         }
       }
     };
-    if (top !== undefined) visit(top);
+    if (top !== undefined) visit(top, asMap);
   }
 }
 
