@@ -9,12 +9,52 @@
 {{partial:header}}
 <main id="main" tabindex="-1">
 <div class="container">
-<div class="hero">
+<article class="prose">
 <h1>{{h1}}</h1>
-<p class="privacy-line"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg>{{s:privacy.line}}</p>
-<p class="how-to-check">{{s:privacy.howToCheck}}</p>
-<p class="more"><a class="more-link" href="/">{{s:nav.home}}</a></p>
-</div>
+<p class="lead"><strong>Tus archivos no salen de tu dispositivo.</strong> resma los une o los convierte dentro de tu navegador, y el PDF resultante se crea ahí mismo. No se suben a ningún servidor, tampoco al de resma.</p>
+
+<h2>Qué pasa con tus archivos</h2>
+<ol>
+<li>Al abrir la página, tu navegador descarga resma: la página, su código y la tipografía. Es lo mismo para todo el mundo y no lleva nada tuyo.</li>
+<li>Cuando eliges archivos, el navegador los lee en la memoria de tu dispositivo.</li>
+<li>Al usar el botón principal, el código de resma crea el PDF en esa misma memoria.</li>
+<li>Descargas el PDF con «Descargar PDF» y se guarda donde tú elijas.</li>
+<li>Al cerrar o recargar la página, todo desaparece. resma no guarda nada propio en tu dispositivo (ni cookies ni almacenamiento del navegador). Tu navegador sí puede conservar en su caché normal los archivos de la propia página (código, estilos, tipografía e iconos), iguales para todo el mundo y sin nada tuyo; se explica en la <a href="/cookies/">política de cookies</a>.</li>
+</ol>
+<p>Mientras trabaja con tus archivos, resma no hace ninguna conexión a internet. Además, la página indica a tu navegador que bloquee las conexiones que servirían para enviar datos, incluso hacia el propio sitio.</p>
+
+<h2>Cómo comprobarlo tú</h2>
+
+<h3>Prueba 1: modo avión</h3>
+<ol>
+<li>Abre la herramienta y espera a ver «Lista». Esa línea indica que la herramienta ya está preparada y puede trabajar sin conexión.</li>
+<li>Activa el modo avión o desconecta la wifi y los datos.</li>
+<li>Elige tus archivos y crea el PDF.</li>
+</ol>
+<p>Funciona igual sin conexión. Si resma necesitara enviar tus archivos a algún sitio para procesarlos, sin conexión no funcionaría.</p>
+
+<h3>Prueba 2: el panel de red del navegador (en un navegador de escritorio)</h3>
+<ol>
+<li>Abre la herramienta y usa la tecla F12 (o clic derecho &gt; «Inspeccionar»).</li>
+<li>Ve a la pestaña «Red» (en inglés, «Network»).</li>
+<li>Usa la herramienta con tus archivos.</li>
+</ol>
+<p>En la lista verás las descargas de la propia página al abrirla, pero ninguna petición nueva mientras se crea el PDF, y ninguna que envíe datos. Las entradas que empiezan por «blob:» son copias dentro de tu propio navegador (por ejemplo, las miniaturas y el PDF listo para descargar) y no se envían a ningún sitio.</p>
+
+<h3>Prueba 3: el código fuente</h3>
+<p>Todo el código de resma es abierto y está en <a href="https://github.com/saidcveltran/resma">GitHub</a>. Cualquiera puede leerlo o pedir a alguien de confianza que lo revise.</p>
+
+<h2>Qué sigue viendo el servicio que aloja la web</h2>
+<p>Para mostrarte la página, tu navegador tiene que pedirla. Cloudflare, el servicio que aloja resma, recibe esas peticiones y con ellas datos técnicos como tu dirección IP, el tipo de navegador, la página pedida y la hora. Nunca recibe tus archivos ni su contenido.</p>
+<p>resma no usa analítica, publicidad ni seguimiento. Los detalles están en la <a href="/privacidad/">política de privacidad</a> y en la <a href="/cookies/">política de cookies</a>.</p>
+
+<h2>Qué no puede garantizar resma</h2>
+<ul>
+<li>resma no controla tu dispositivo ni tu navegador. Una extensión del navegador, un programa espía o un equipo gestionado por tu empresa o tu centro podrían ver lo que haces, en esta y en cualquier otra web.</li>
+<li>El navegador y el sistema operativo también hacen cosas por su cuenta, fuera de la página: pueden enviar informes de fallos a su fabricante, comprobar los archivos que descargas con un servicio de navegación segura o dejar que un antivirus analice el PDF guardado. Lo mismo puede ocurrir con los asistentes de inteligencia artificial que algunos navegadores llevan en un panel lateral, que pueden leer lo que muestra la página.</li>
+<li>El PDF descargado queda en tu dispositivo. Si lo compartes o lo subes a otro sitio, ya depende de ti y de ese sitio.</li>
+</ul>
+</article>
 </div>
 </main>
 {{partial:footer}}

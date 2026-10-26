@@ -50,6 +50,60 @@
       "h1": "Cómo funciona",
       "in_sitemap": true,
       "cache": "revalidate"
+    },
+    {
+      "path": "/aviso-legal/",
+      "page": "aviso-legal",
+      "title": "Aviso legal | resma",
+      "description": "Quién publica resma, cómo contactar y en qué condiciones se ofrece.",
+      "h1": "Aviso legal",
+      "in_sitemap": false,
+      "cache": "revalidate"
+    },
+    {
+      "path": "/privacidad/",
+      "page": "privacidad",
+      "title": "Política de privacidad | resma",
+      "description": "Qué datos personales se tratan al usar resma, para qué, cuánto tiempo y cómo ejercer tus derechos.",
+      "h1": "Política de privacidad",
+      "in_sitemap": false,
+      "cache": "revalidate"
+    },
+    {
+      "path": "/cookies/",
+      "page": "cookies",
+      "title": "Política de cookies | resma",
+      "description": "resma no usa cookies ni guarda nada propio en tu dispositivo.",
+      "h1": "Política de cookies",
+      "in_sitemap": false,
+      "cache": "revalidate"
+    },
+    {
+      "path": "/condiciones/",
+      "page": "condiciones",
+      "title": "Condiciones de uso | resma",
+      "description": "resma es gratis y se ofrece tal cual. Tú decides qué archivos usas y sigues siendo responsable de ellos.",
+      "h1": "Condiciones de uso",
+      "in_sitemap": false,
+      "cache": "revalidate"
+    },
+    {
+      "path": "/accesibilidad/",
+      "page": "accesibilidad",
+      "title": "Declaración de accesibilidad | resma",
+      "description": "Cómo se evalúa la accesibilidad de resma, qué falta por comprobar y cómo avisar de un problema.",
+      "h1": "Declaración de accesibilidad",
+      "in_sitemap": false,
+      "cache": "revalidate"
+    },
+    {
+      "path": "/licencias/",
+      "page": "licencias",
+      "title": "Licencias | resma",
+      "description": "resma es software libre con licencia MIT. Componentes de terceros que incluye y sus licencias.",
+      "h1": "Licencias",
+      "in_sitemap": false,
+      "cache": "revalidate"
     }
   ],
   "not_found": {

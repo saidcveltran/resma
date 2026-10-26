@@ -43,6 +43,7 @@ SOURCEMAP_ANY_RE = re.compile(rb"^//# sourceMappingURL=", re.M)
 ROUTE_RE = re.compile(r"/(?:[a-z0-9-]+/)*")  # always used with fullmatch
 SEGMENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 ROOT_FILE_RE = re.compile(r"/[A-Za-z0-9][A-Za-z0-9._-]*")
+LICENCE_FILE_RE = re.compile(r"/licencias/[A-Za-z0-9][A-Za-z0-9._-]*\.txt")  # the licence texts under /licencias/
 BASE_URL_RE = re.compile(r"https://[a-z0-9.-]+")
 REPARSE_POINT = 0x400  # Windows FILE_ATTRIBUTE_REPARSE_POINT: symlinks, junctions, mount points
 STATIC_REFUSED = ("_redirects", "_headers")
@@ -308,8 +309,8 @@ def render(source, label, partials, values, strings=None):
 
 # ---------------------------------------------------------------- headers
 
-def generate_headers(base_url, routes, root_files):
-    """Return the text of dist/_headers (DESIGN section 7). routes/root_files are URL paths."""
+def generate_headers(base_url, routes, root_files, licence_files=()):
+    """Return the text of dist/_headers (DESIGN section 7). routes/root_files/licence_files are URL paths."""
     rules = []
 
     def rule(pattern, lines):
@@ -331,7 +332,7 @@ def generate_headers(base_url, routes, root_files):
         f"Content-Security-Policy: script-src {base_url}/assets/; worker-src {base_url}/assets/",
     ])
     rule("/assets/*", [f"Cache-Control: {CACHE_IMMUTABLE}"])
-    for path in list(routes) + list(root_files):
+    for path in list(routes) + list(root_files) + list(licence_files):
         rule(path, [f"Cache-Control: {CACHE_REVALIDATE}"])
     rule("https://:project.pages.dev/*", ["X-Robots-Tag: noindex"])
     rule("https://:version.:project.pages.dev/*", ["X-Robots-Tag: noindex"])
@@ -340,7 +341,8 @@ def generate_headers(base_url, routes, root_files):
              "https://:version.:project.pages.dev/*"}
     seen = set()
     for pattern, lines in rules:
-        if not (pattern in fixed or ROUTE_RE.fullmatch(pattern) or ROOT_FILE_RE.fullmatch(pattern)):
+        if not (pattern in fixed or ROUTE_RE.fullmatch(pattern) or ROOT_FILE_RE.fullmatch(pattern)
+                or LICENCE_FILE_RE.fullmatch(pattern)):
             raise BuildError(f"_headers rule pattern {pattern!r} is not an allowed pattern")
         if pattern in seen:
             raise BuildError(f"_headers rule pattern {pattern!r} appears twice")
@@ -548,7 +550,9 @@ def build(root):
             raise BuildError(f"site.json verification file {name} is not in static/")
 
     check_output_paths(files)
-    headers = generate_headers(site["base_url"], [r["path"] for r in site["routes"]], sorted(root_files))
+    licence_files = sorted("/" + rel for rel in static if LICENCE_FILE_RE.fullmatch("/" + rel))
+    headers = generate_headers(site["base_url"], [r["path"] for r in site["routes"]], sorted(root_files),
+                               licence_files)
     files["_headers"] = headers.encode("utf-8")
 
     report, failures = check_budget(site, files, assets_prefix, pages)

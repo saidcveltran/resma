@@ -186,6 +186,30 @@ export const strings = {
     "how": {
       "title": "Cómo funciona resma: tus archivos no salen de tu dispositivo",
       "description": "Qué ocurre con tus archivos en resma y cómo puedes comprobarlo tú mismo: sin subidas, sin cuentas y sin cookies."
+    },
+    "legal": {
+      "title": "Aviso legal | resma",
+      "description": "Quién publica resma, cómo contactar y en qué condiciones se ofrece."
+    },
+    "privacy": {
+      "title": "Política de privacidad | resma",
+      "description": "Qué datos personales se tratan al usar resma, para qué, cuánto tiempo y cómo ejercer tus derechos."
+    },
+    "cookies": {
+      "title": "Política de cookies | resma",
+      "description": "resma no usa cookies ni guarda nada propio en tu dispositivo."
+    },
+    "terms": {
+      "title": "Condiciones de uso | resma",
+      "description": "resma es gratis y se ofrece tal cual. Tú decides qué archivos usas y sigues siendo responsable de ellos."
+    },
+    "accessibility": {
+      "title": "Declaración de accesibilidad | resma",
+      "description": "Cómo se evalúa la accesibilidad de resma, qué falta por comprobar y cómo avisar de un problema."
+    },
+    "licences": {
+      "title": "Licencias | resma",
+      "description": "resma es software libre con licencia MIT. Componentes de terceros que incluye y sus licencias."
     }
   },
   "notFound": {

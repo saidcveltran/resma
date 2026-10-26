@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+{{partial:head}}
+{{partial:seo}}
+</head>
+<body>
+{{partial:icons}}
+{{partial:header}}
+<main id="main" tabindex="-1">
+<div class="container">
+<article class="prose">
+<h1>{{h1}}</h1>
+<p class="updated">Última actualización: <time datetime="2026-10-26">26 de octubre de 2026</time></p>
+<p class="lead"><strong>Si algo de resma no te funciona por un problema de accesibilidad, escribe a <a href="mailto:resma@aiskaron.com">resma@aiskaron.com</a> y recibirás respuesta en un plazo de 7 días.</strong></p>
+
+<h2>Objetivo</h2>
+<p>resma se diseña para cumplir las Pautas de Accesibilidad para el Contenido Web (WCAG) 2.2, nivel AA. En la práctica:</p>
+<ul>
+<li>todo se puede hacer solo con el teclado, con el foco siempre visible;</li>
+<li>hay botones para elegir archivos y para ordenarlos (Subir, Bajar, Quitar), así que no hace falta arrastrar;</li>
+<li>los avisos de progreso, resultado y error se anuncian a los lectores de pantalla;</li>
+<li>el texto se puede ampliar al 200 % y la página se adapta a pantallas de 320 píxeles de ancho;</li>
+<li>se respetan el modo oscuro y la preferencia de reducir el movimiento;</li>
+<li>no hay límites de tiempo.</li>
+</ul>
+
+<h2 id="situacion">Situación actual</h2>
+<p><strong>Pendiente de evaluación.</strong> La evaluación descrita abajo se hará antes de la primera publicación; esta página se actualizará con su fecha y su resultado.</p>
+
+<h2>Cómo se evalúa</h2>
+<ul>
+<li>Pruebas automáticas con axe-core (reglas de WCAG 2.0, 2.1 y 2.2, niveles A y AA) en todas las páginas y en cada estado de las herramientas (vacía, con archivos, con error y con resultado), en modo claro y oscuro.</li>
+<li>Uso completo de las dos herramientas solo con el teclado.</li>
+<li>Recorrido manual en un navegador de escritorio y con ancho de teléfono.</li>
+<li>Autoevaluación: la hace la misma persona que publica resma, no una entidad externa.</li>
+</ul>
+
+<h2>Limitaciones conocidas</h2>
+<ul>
+<li><strong>iPhone y iPad:</strong> Safari para iOS se prueba solo mediante emulación en un navegador de escritorio, no en un dispositivo real. Puede haber fallos que solo aparezcan en un iPhone o iPad.</li>
+<li><strong>Lectores de pantalla:</strong> está previsto probarlo con un lector de pantalla real; hasta que figure aquí, los anuncios solo se han comprobado de forma automática.</li>
+<li><strong>Archivos PDF:</strong> resma no hace accesibles los PDF que unes o creas. Un PDF que no era accesible no lo será después de unirlo, y las imágenes convertidas a PDF no llevan texto alternativo.</li>
+</ul>
+
+<h2>Contacto y plazo de respuesta</h2>
+<p>Escribe a <a href="mailto:resma@aiskaron.com">resma@aiskaron.com</a> indicando la página, qué intentabas hacer y, si puedes, el navegador y el dispositivo que usas.</p>
+<p>resma lo mantiene una sola persona. Por eso el compromiso es sencillo: responder en un plazo de 7 días y, si el problema es de resma, corregirlo en la siguiente versión o, si no es posible, explicarte por qué y ofrecerte otra forma de hacerlo.</p>
+
+<h2>Fecha</h2>
+<p>Esta declaración se preparó el <time datetime="2026-10-26">26 de octubre de 2026</time> y se revisa con cada versión de resma.</p>
+</article>
+</div>
+</main>
+{{partial:footer}}
+</body>
+</html>
