@@ -8,6 +8,7 @@
 // When the controller is wired, <html data-tool="ready"> says so.
 import { t } from './strings.es.js';
 import { engine, EngineError } from './engine-client.js';
+import { isResourceError } from './worker/errors.js';
 import { sniff } from './sniff.js';
 import { LARGE_INPUT_BYTES, THUMBNAIL_MAX_IMAGES } from './config.js';
 import { createFileList } from './file-list.js';
@@ -20,6 +21,13 @@ const KNOWN_ERRORS = new Set(['WRONG_TYPE_PDF', 'WRONG_TYPE_IMAGE', 'HEIC', 'PRO
   'TOO_LARGE', 'IMAGE_TOO_BIG', 'IMAGE_UNSUPPORTED', 'INTERNAL']);
 // Worker codes that make one input unusable (the user must remove that row).
 const FILE_ERRORS = new Set(['WRONG_TYPE', 'PROTECTED', 'DAMAGED', 'IMAGE_TOO_BIG', 'IMAGE_UNSUPPORTED']);
+
+// A crash or restart during a call is the "too large" class (DESIGN 6.7), on add and in a job alike; a worker
+// answer keeps its code.
+function codeOf(err) {
+  if (err instanceof EngineError) return err.crash === true ? 'TOO_LARGE' : err.code;
+  return isResourceError(err) ? 'TOO_LARGE' : 'INTERNAL';
+}
 
 function errorKey(def, code) {
   const mapped = code === 'WRONG_TYPE' ? def.wrongType : code;
@@ -102,6 +110,7 @@ export function createTool(def, root = document) {
   // Any change of the list ends the current result and clears a stale error.
   function listChanged() {
     jobSeq += 1;
+    if (busy) engine.cancel(); // a job in flight is dropped: its worker goes now, not when it answers
     download.revoke();
     showResult(false);
     status.clearError();
@@ -137,15 +146,14 @@ export function createTool(def, root = document) {
     list.update(entry.id, { kind });
     try {
       if (def.inspect) {
-            list.update(entry.id, { ...(await def.inspect(entry.file, kind)), status: 'ready' });
+        list.update(entry.id, { ...(await def.inspect(entry.file, kind)), status: 'ready' });
       } else {
         const bytes = await entry.file.arrayBuffer();
         const res = await engine.call('inspect', { files: [{ index: 0, kind, bytes }] }, null, [bytes]);
         list.update(entry.id, { status: 'ready', pages: res.pages });
       }
     } catch (err) {
-      const code = err instanceof EngineError ? err.code : err instanceof RangeError ? 'TOO_LARGE' : 'INTERNAL';
-      list.update(entry.id, { status: 'error', errorCode: errorKey(def, code) });
+      list.update(entry.id, { status: 'error', errorCode: errorKey(def, codeOf(err)) });
     }
     refreshThumbnails();
   }
@@ -298,9 +306,7 @@ export function createTool(def, root = document) {
     } catch (err) {
       if (stale()) return;
       setBusy(false);
-      // A crash or restart during the job is the "too large" class (DESIGN 6.7); a worker answer keeps its code.
-      const crashed = err instanceof EngineError && err.crash === true;
-      const code = crashed ? 'TOO_LARGE' : err instanceof EngineError ? err.code : 'INTERNAL';
+      const code = codeOf(err);
       status.info(''); // the "Procesando…" line of the lost job must not stay on screen
       const entry = err instanceof EngineError && Number.isInteger(err.index) ? entries[err.index] : undefined;
       if (entry && FILE_ERRORS.has(code)) {

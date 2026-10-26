@@ -1,7 +1,7 @@
 // Op `merge`: join the pages of several PDFs, in order, into one new document.
 // Page scripts and other active content are removed before the pages are copied (T12): the
 // output keeps the page content, ordinary links and in-document links, and nothing else that runs.
-import { EngineError } from '../errors.js';
+import { EngineError, isResourceError } from '../errors.js';
 import { readFiles, loadPdf } from './inspect.js';
 
 // Pages and annotations are rebuilt from allowlists: only the keys named here are copied, so a
@@ -23,7 +23,8 @@ const INHERITED_KEYS = new Set(['MediaBox', 'CropBox', 'Rotate', 'Resources']);
 const RESOURCE_KEYS = ['ExtGState', 'ColorSpace', 'Pattern', 'Shading', 'XObject', 'Font', 'ProcSet', 'Properties'];
 const GROUP_KEYS = ['S', 'CS', 'I', 'K'];
 // Keys that never belong to anything shown on a page, and actions that run or reach outside.
-const ACTIVE_KEYS = ['AA', 'JS', 'JavaScript', 'OpenAction', 'XFA', 'EF', 'AF', 'PresSteps', 'EmbeddedFiles'];
+const ACTIVE_KEYS = ['AA', 'JS', 'JavaScript', 'OpenAction', 'XFA', 'EF', 'AF', 'PresSteps', 'EmbeddedFiles',
+  'EmbeddedFile', 'Launch', 'SubmitForm', 'ImportData', 'GoToR'];
 const ACTIVE_ACTIONS = new Set(['JavaScript', 'Launch', 'SubmitForm', 'ImportData', 'GoToR', 'GoToE', 'Named',
   'Hide', 'Rendition', 'SetOCGState', 'Thread', 'ResetForm', 'Movie', 'Sound', 'Trans', 'GoTo3DView',
   'RichMediaExecute']);
@@ -348,7 +349,7 @@ export async function run({ files }, lib, progress = () => {}) {
       sweep(lib, out.context, copied);
       for (const page of copied) out.addPage(page);
     } catch (err) {
-      if (err instanceof RangeError) throw new EngineError('TOO_LARGE', index);
+      if (isResourceError(err)) throw new EngineError('TOO_LARGE', index);
       throw new EngineError('DAMAGED', index);
     }
     progress(i + 1, total);

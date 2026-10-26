@@ -8,6 +8,10 @@ export const safeCode = (code) => (typeof code === 'string' && CODES.includes(co
 // A file index is a non-negative integer or nothing.
 export const safeIndex = (index) => (Number.isSafeInteger(index) && index >= 0 ? index : undefined);
 
+// Out of memory or out of call stack: a RangeError (Chromium, WebKit) or Firefox's InternalError ("too much
+// recursion"). The one place that knows both classes; everything else asks here.
+export const isResourceError = (err) => err instanceof RangeError || (err instanceof Error && err.name === 'InternalError');
+
 export class EngineError extends Error {
   constructor(code, index) {
     super(code);
@@ -25,7 +29,7 @@ export function toErrorReply(id, err) {
   if (err instanceof EngineError) {
     code = err.code;
     index = err.index;
-  } else if (err instanceof RangeError) {
+  } else if (isResourceError(err)) {
     code = 'TOO_LARGE'; // out of memory while parsing or saving (DESIGN 6.7)
   }
   const reply = { id, type: 'error', code };

@@ -157,6 +157,8 @@ function createEngine() {
       if (!worker && state !== 'preparing') spawn();
       return readyPromise;
     },
+    // The job token was invalidated (restart, list or option change): the worker goes now and a fresh one starts.
+    cancel() { if (pending.size > 0) recycle(); },
     async call(op, payload = {}, onProgress = null, transfer = []) {
       try { await this.ready(); } catch { throw new EngineError('INTERNAL'); }
       return new Promise((resolve, reject) => {

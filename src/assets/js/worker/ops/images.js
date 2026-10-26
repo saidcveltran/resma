@@ -13,7 +13,7 @@
 //     parsers read; a difference is DAMAGED (the two readers disagree about the file).
 //   - A 16-bit PNG, or one the library cannot embed, is redrawn on an OffscreenCanvas as an 8-bit PNG;
 //     the canvas and the bitmap are released after use.
-import { EngineError } from '../errors.js';
+import { EngineError, isResourceError } from '../errors.js';
 import { readJpegInfo, readPngInfo, checkPngChunks } from '../exif.js';
 import { place } from '../layout.js';
 import { readFiles } from './inspect.js';
@@ -98,7 +98,7 @@ async function embedJpeg(doc, bytes) {
   try {
     image = await doc.embedJpg(clean);
   } catch (err) {
-    if (err instanceof RangeError) throw err;
+    if (isResourceError(err)) throw err;
     throw new EngineError('DAMAGED');
   }
   if (image.width !== info.width || image.height !== info.height
@@ -255,7 +255,7 @@ async function redrawOnCanvas(env, png, info) {
     const blob = await canvas.convertToBlob({ type: 'image/png' });
     return new Uint8Array(await blob.arrayBuffer());
   } catch (err) {
-    if (err instanceof EngineError || err instanceof RangeError) throw err;
+    if (err instanceof EngineError || isResourceError(err)) throw err;
     return null;
   } finally {
     if (bitmap && typeof bitmap.close === 'function') bitmap.close();
@@ -278,7 +278,7 @@ async function embedPngFile(doc, bytes, env) {
       checkEnginePng(image, info, true);
       return image;
     } catch (err) {
-      if (err instanceof EngineError || err instanceof RangeError) throw err;
+      if (err instanceof EngineError || isResourceError(err)) throw err;
       return null;
     }
   };
@@ -293,7 +293,7 @@ async function embedPngFile(doc, bytes, env) {
       checkEnginePng(image, info, false);
       return image;
     } catch (err) {
-      if (err instanceof EngineError || err instanceof RangeError) throw err;
+      if (err instanceof EngineError || isResourceError(err)) throw err;
       return null;
     }
   };
@@ -344,7 +344,7 @@ export async function run({ files, options }, lib, progress = () => {}, env = gl
       );
     } catch (err) {
       if (err instanceof EngineError) throw new EngineError(err.code, index);
-      if (err instanceof RangeError) throw new EngineError('TOO_LARGE', index);
+      if (isResourceError(err)) throw new EngineError('TOO_LARGE', index);
       throw new EngineError('INTERNAL', index);
     }
     inputs[i].bytes = null; // the embedded copy is enough from here on

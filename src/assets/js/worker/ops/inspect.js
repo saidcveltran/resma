@@ -1,6 +1,6 @@
 // Op `inspect`: count the pages of one PDF, or say why it cannot be used.
 // The library recovers silently from several kinds of damage, so the checks here are our own.
-import { EngineError } from '../errors.js';
+import { EngineError, isResourceError } from '../errors.js';
 
 const EOF_WINDOW = 1024; // the end-of-file marker must sit in the last 1,024 bytes
 const KNOWN_FILTERS = new Set(['Standard']);
@@ -56,7 +56,7 @@ export async function loadPdf(lib, bytes, index) {
   try {
     doc = await PDFDocument.load(bytes, { password: '', updateMetadata: false });
   } catch (err) {
-    if (err instanceof RangeError) throw new EngineError('TOO_LARGE', index);
+    if (isResourceError(err)) throw new EngineError('TOO_LARGE', index);
     const text = err && typeof err.message === 'string' ? err.message : '';
     if (/NEEDS PASSWORD|Password incorrect|is encrypted/i.test(text)) throw new EngineError('PROTECTED', index);
     if (isCertificateLocked(bytes)) throw new EngineError('PROTECTED', index);
@@ -82,7 +82,7 @@ export async function loadPdf(lib, bytes, index) {
     }
   } catch (err) {
     if (err instanceof EngineError) throw err;
-    throw new EngineError('DAMAGED', index);
+    throw new EngineError(isResourceError(err) ? 'TOO_LARGE' : 'DAMAGED', index);
   }
   return doc;
 }
