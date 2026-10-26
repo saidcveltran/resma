@@ -29,6 +29,12 @@ function codeOf(err) {
   return isResourceError(err) ? 'TOO_LARGE' : 'INTERNAL';
 }
 
+// Moves focus and makes sure the element is on screen: WebKit on iPhone does not always scroll to it.
+function focusInView(el) {
+  el.focus();
+  el.scrollIntoView({ block: 'nearest' });
+}
+
 function errorKey(def, code) {
   const mapped = code === 'WRONG_TYPE' ? def.wrongType : code;
   return KNOWN_ERRORS.has(mapped) ? mapped : 'INTERNAL';
@@ -260,7 +266,7 @@ export function createTool(def, root = document) {
     const rest = list.entries();
     const next = rest[removed.index] || rest[removed.index - 1];
     if (next) list.focusButton(next.id, 'remove');
-    else chooseBtn.focus();
+    else focusInView(chooseBtn);
     status.info(t('status.removed', { name: isolate(removed.entry.name), count: rest.length }));
   }
 
@@ -306,7 +312,7 @@ export function createTool(def, root = document) {
       showResult(true);
       status.info(t('status.done', { pages: res.pages, size: formatSize(size) }));
       setBusy(false);
-      link.focus();
+      focusInView(link);
     } catch (err) {
       if (stale()) return;
       setBusy(false);
@@ -333,7 +339,7 @@ export function createTool(def, root = document) {
     setBusy(false);
     status.clear();
     status.info(t('status.cleared'));
-    chooseBtn.focus();
+    focusInView(chooseBtn);
   });
 
   chooseLabel.textContent = t('common.chooseFiles');
