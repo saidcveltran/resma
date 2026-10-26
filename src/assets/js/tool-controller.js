@@ -3,11 +3,13 @@
 // The drop zone has a visual state (empty, compact once there are files, active while files are dragged
 // over it, disabled while a job runs). Dropping files on it is a desktop extra: it feeds the same
 // addFiles() path as the picker.
+// A definition may add `inspect(file, kind)` (a head check on add instead of the worker's PDF inspect),
+// `options(panel)` (job options read from [data-options]) and `thumbnails` (rows show pictures).
 // When the controller is wired, <html data-tool="ready"> says so.
 import { t } from './strings.es.js';
 import { engine, EngineError } from './engine-client.js';
 import { sniff } from './sniff.js';
-import { LARGE_INPUT_BYTES } from './config.js';
+import { LARGE_INPUT_BYTES, THUMBNAIL_MAX_IMAGES } from './config.js';
 import { createFileList } from './file-list.js';
 import { createStatus, isolate } from './status.js';
 import { createDownload, formatSize } from './download.js';
@@ -15,9 +17,9 @@ import { createDownload, formatSize } from './download.js';
 // Error codes that have a text in strings.es.js. Any other code is shown as INTERNAL, so t() is
 // never asked for a missing key.
 const KNOWN_ERRORS = new Set(['WRONG_TYPE_PDF', 'WRONG_TYPE_IMAGE', 'HEIC', 'PROTECTED', 'DAMAGED',
-  'TOO_LARGE', 'IMAGE_UNSUPPORTED', 'INTERNAL']);
+  'TOO_LARGE', 'IMAGE_TOO_BIG', 'IMAGE_UNSUPPORTED', 'INTERNAL']);
 // Worker codes that make one input unusable (the user must remove that row).
-const FILE_ERRORS = new Set(['WRONG_TYPE', 'PROTECTED', 'DAMAGED']);
+const FILE_ERRORS = new Set(['WRONG_TYPE', 'PROTECTED', 'DAMAGED', 'IMAGE_TOO_BIG', 'IMAGE_UNSUPPORTED']);
 
 function errorKey(def, code) {
   const mapped = code === 'WRONG_TYPE' ? def.wrongType : code;
@@ -36,6 +38,7 @@ export function createTool(def, root = document) {
   const resultEl = q('result');
   const slot = q('result-slot');
   const restartBtn = q('restart');
+  const optionsEl = q('options');
   const status = createStatus(q('status'), q('alert'), q('progress'));
   const download = createDownload(slot, `${def.strings}.downloadSize`);
 
@@ -53,7 +56,33 @@ export function createTool(def, root = document) {
     if (busy) return;
     if (action === 'remove') removeRow(id);
     else moveRow(id, action === 'up' ? -1 : 1);
-  });
+  }, { thumbnails: def.thumbnails || null });
+
+  // Thumbnails (CS-4): an object URL of a NEW Blob typed from the sniffed kind, never the File or its reported
+  // type. Only for a ready, `decodable` row while the list is small; else a numbered tile. Revoked on removal,
+  // restart and when the list outgrows the limits.
+  function releaseThumbnail(entry) {
+    if (!entry.thumbUrl) return;
+    URL.revokeObjectURL(entry.thumbUrl);
+    list.update(entry.id, { thumbUrl: null }, false);
+  }
+
+  function refreshThumbnails() {
+    if (!def.thumbnails) return;
+    const entries = list.entries();
+    const total = entries.reduce((n, e) => n + e.size, 0);
+    const room = entries.length <= THUMBNAIL_MAX_IMAGES && total <= LARGE_INPUT_BYTES;
+    for (const e of entries) {
+      const type = def.thumbnails.types[e.kind];
+      const wanted = room && e.status === 'ready' && e.decodable === true && typeof type === 'string';
+      if (wanted && !e.thumbUrl) {
+        list.update(e.id, { thumbUrl: URL.createObjectURL(new Blob([e.file], { type })) }, false);
+      } else if (!wanted) {
+        releaseThumbnail(e);
+      }
+    }
+    list.redraw();
+  }
 
   // With a result on screen the drop zone and the action button are hidden, so the download is the one
   // primary button. The list stays; changing it ends the result and brings them back.
@@ -78,6 +107,7 @@ export function createTool(def, root = document) {
     status.clearError();
     chooseLabel.textContent = t(list.entries().length > 0 ? 'common.chooseMoreFiles' : 'common.chooseFiles');
     dropzoneState();
+    refreshThumbnails();
   }
 
   function setBusy(on) {
@@ -87,6 +117,7 @@ export function createTool(def, root = document) {
     actionBtn.setAttribute('aria-busy', String(on));
     chooseBtn.setAttribute('aria-disabled', String(on));
     actionBtn.textContent = t(`${def.strings}.${on ? 'actionBusy' : 'action'}`);
+    if (optionsEl) optionsEl.inert = on;
     dropzoneState();
   }
 
@@ -105,13 +136,18 @@ export function createTool(def, root = document) {
     }
     list.update(entry.id, { kind });
     try {
-      const bytes = await entry.file.arrayBuffer();
-      const res = await engine.call('inspect', { files: [{ index: 0, kind, bytes }] }, null, [bytes]);
-      list.update(entry.id, { status: 'ready', pages: res.pages });
+      if (def.inspect) {
+            list.update(entry.id, { ...(await def.inspect(entry.file, kind)), status: 'ready' });
+      } else {
+        const bytes = await entry.file.arrayBuffer();
+        const res = await engine.call('inspect', { files: [{ index: 0, kind, bytes }] }, null, [bytes]);
+        list.update(entry.id, { status: 'ready', pages: res.pages });
+      }
     } catch (err) {
-      const code = err instanceof EngineError ? err.code : 'INTERNAL';
+      const code = err instanceof EngineError ? err.code : err instanceof RangeError ? 'TOO_LARGE' : 'INTERNAL';
       list.update(entry.id, { status: 'error', errorCode: errorKey(def, code) });
     }
+    refreshThumbnails();
   }
 
   function addFiles(files) {
@@ -207,6 +243,7 @@ export function createTool(def, root = document) {
   function removeRow(id) {
     const removed = list.remove(id);
     if (!removed) return;
+    releaseThumbnail(removed.entry); // its row is gone: give its picture back
     listChanged();
     const rest = list.entries();
     const next = rest[removed.index] || rest[removed.index - 1];
@@ -249,7 +286,8 @@ export function createTool(def, root = document) {
         if (stale()) return;
       }
       const files = buffers.map((bytes, index) => ({ index, kind: entries[index].kind, bytes }));
-      const res = await engine.call(def.op, { files, options: {} }, (done, of) => { if (!stale()) status.progress(done, of); }, buffers);
+      const options = def.options && optionsEl ? def.options(optionsEl) : {};
+      const res = await engine.call(def.op, { files, options }, (done, of) => { if (!stale()) status.progress(done, of); }, buffers);
       if (stale()) return; // the list changed or was restarted meanwhile: this result is dropped
       const size = res.bytes.byteLength;
       const link = download.offer(res.bytes, def.outputName(entries));
@@ -260,14 +298,14 @@ export function createTool(def, root = document) {
     } catch (err) {
       if (stale()) return;
       setBusy(false);
-      // A worker that crashed or was restarted during the job is the "too large for this device" class
-      // (DESIGN 6.7); an answer the worker sent keeps its own code.
+      // A crash or restart during the job is the "too large" class (DESIGN 6.7); a worker answer keeps its code.
       const crashed = err instanceof EngineError && err.crash === true;
       const code = crashed ? 'TOO_LARGE' : err instanceof EngineError ? err.code : 'INTERNAL';
       status.info(''); // the "Procesando…" line of the lost job must not stay on screen
       const entry = err instanceof EngineError && Number.isInteger(err.index) ? entries[err.index] : undefined;
       if (entry && FILE_ERRORS.has(code)) {
         list.update(entry.id, { status: 'error', errorCode: errorKey(def, code) });
+        refreshThumbnails();
       }
       failWith(code, entry ? entry.name : '');
     }
@@ -275,7 +313,11 @@ export function createTool(def, root = document) {
 
   actionBtn.addEventListener('click', run);
 
+  // A changed option makes a shown result stale: it ends like any other change of the inputs.
+  if (optionsEl) optionsEl.addEventListener('change', () => { if (!busy) listChanged(); });
+
   restartBtn.addEventListener('click', () => {
+    for (const e of list.entries()) releaseThumbnail(e);
     list.clear();
     listChanged(); // also ends a job that is still running: its result is dropped
     setBusy(false);

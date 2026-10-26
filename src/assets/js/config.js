@@ -35,3 +35,7 @@ export const STATUS_THROTTLE_MS = 1000;
 
 // Total input above this many bytes shows a non-blocking warning before the job (DESIGN 6.7).
 export const LARGE_INPUT_BYTES = 100 * 1024 * 1024;
+
+// Thumbnails (DESIGN 6.5, 6.7, CS-4): above this many images, or above LARGE_INPUT_BYTES in total, the rows show
+// numbered tiles instead of thumbnails, to spare decoded-bitmap memory on phones.
+export const THUMBNAIL_MAX_IMAGES = 30;

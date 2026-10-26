@@ -6,9 +6,12 @@ import { formatSize } from './download.js';
 import { isolate } from './status.js';
 import { icon } from './icons.js';
 
-// createFileList(listEl, onAction): onAction(action, id) is called for 'up' | 'down' | 'remove'.
-export function createFileList(listEl, onAction) {
+// createFileList(listEl, onAction, { thumbnails }): onAction(action, id) is called for 'up' | 'down' | 'remove'.
+// With `thumbnails` ({ placeholderKey }) a ready row shows `entry.thumbUrl` (owned by the controller) or a numbered
+// tile; the <img> has an empty alt and carries no name.
+export function createFileList(listEl, onAction, { thumbnails = null } = {}) {
   const items = [];
+  const thumbEls = new Map(); // entry id -> { url, el }: kept across redraws
   let nextId = 1;
 
   function fileName(entry) {
@@ -33,15 +36,44 @@ export function createFileList(listEl, onAction) {
     return b;
   }
 
+  function thumbImage(entry) {
+    const cached = thumbEls.get(entry.id);
+    if (cached && cached.url === entry.thumbUrl) return cached.el;
+    const img = document.createElement('img');
+    img.className = 'thumb';
+    img.setAttribute('alt', '');
+    img.setAttribute('width', '56');
+    img.setAttribute('height', '48');
+    img.setAttribute('decoding', 'async');
+    img.setAttribute('src', entry.thumbUrl);
+    thumbEls.set(entry.id, { url: entry.thumbUrl, el: img });
+    return img;
+  }
+
+  // The numbered tile of a photo without a thumbnail (decorative).
+  function tile(index) {
+    const span = document.createElement('span');
+    span.classList.add('thumb', 'thumb-placeholder');
+    span.setAttribute('aria-hidden', 'true');
+    span.textContent = t(thumbnails.placeholderKey, { position: index + 1 });
+    return span;
+  }
+
+  // The first cell of a row: picture, tile or state icon.
+  function leading(entry, index) {
+    if (thumbnails && entry.status === 'ready') return entry.thumbUrl ? thumbImage(entry) : tile(index);
+    const mark = document.createElement('span');
+    mark.className = 'file-icon';
+    mark.appendChild(icon(entry.status === 'error' ? 'alert' : thumbnails ? 'image' : 'file-pdf'));
+    return mark;
+  }
+
   function row(entry, index) {
     const li = document.createElement('li');
     li.className = 'file-row';
     li.dataset.id = String(entry.id);
     li.dataset.state = entry.status;
-    const mark = document.createElement('span');
-    mark.className = 'file-icon';
-    mark.appendChild(icon(entry.status === 'error' ? 'alert' : 'file-pdf'));
-    li.appendChild(mark);
+    li.appendChild(leading(entry, index));
     const body = document.createElement('div');
     body.className = 'file-body';
     li.appendChild(body);
@@ -94,6 +126,9 @@ export function createFileList(listEl, onAction) {
   function render() {
     listEl.replaceChildren(...items.map(row));
     listEl.hidden = items.length === 0;
+    for (const id of [...thumbEls.keys()]) {
+      if (!items.some((e) => e.id === id && e.thumbUrl)) thumbEls.delete(id);
+    }
   }
 
   listEl.addEventListener('click', (ev) => {
@@ -115,13 +150,14 @@ export function createFileList(listEl, onAction) {
       render();
       return added;
     },
-    // Changes fields of one entry (kind, status, errorCode, pages) and redraws; a removed id is ignored.
-    update(id, patch) {
+    // Changes fields of one entry and redraws (a removed id is ignored); redraw = false defers to redraw().
+    update(id, patch, redraw = true) {
       const entry = items.find((e) => e.id === id);
       if (!entry) return;
       Object.assign(entry, patch);
-      render();
+      if (redraw) render();
     },
+    redraw: render,
     // Returns { entry, index } or null.
     remove(id) {
       const index = items.findIndex((e) => e.id === id);

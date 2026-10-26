@@ -86,6 +86,7 @@ export const strings = {
     "PROTECTED": "«{name}» tiene contraseña. Ábrelo, guárdalo sin contraseña y vuelve a elegirlo.",
     "DAMAGED": "No se puede leer «{name}». Puede estar dañado. Prueba a abrirlo y guardarlo de nuevo.",
     "TOO_LARGE": "Este dispositivo no puede con tantos datos. Prueba con menos archivos a la vez o desde otro dispositivo con más memoria.",
+    "IMAGE_TOO_BIG": "«{name}» es demasiado grande para convertirla aquí. Guárdala más pequeña o como JPG y vuelve a elegirla.",
     "IMAGE_UNSUPPORTED": "No se puede convertir «{name}». Ábrela y guárdala de nuevo como JPG.",
     "INTERNAL": "Hay un fallo al preparar el PDF. Tus archivos siguen en la lista: inténtalo de nuevo.",
     "rowSummary": "{count, plural, one {# archivo no se puede usar. Quítalo para continuar.} other {# archivos no se pueden usar. Quítalos para continuar.}}",

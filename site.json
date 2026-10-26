@@ -22,6 +22,16 @@
       "in_sitemap": true,
       "cache": "revalidate",
       "tool": "merge"
+    },
+    {
+      "path": "/jpg-a-pdf/",
+      "page": "jpg-a-pdf",
+      "title": "JPG a PDF",
+      "description": "Convierte fotos JPG o PNG en un solo PDF en tu navegador.",
+      "h1": "JPG a PDF",
+      "in_sitemap": true,
+      "cache": "revalidate",
+      "tool": "images"
     }
   ]
 }
