@@ -46,3 +46,9 @@ export const THUMBNAIL_MAX_PIXELS = 64000000;
 // A kept ICC colour profile (DESIGN 6.5, SA-10) is at most this many bytes; a bigger one is dropped and the image still
 // converts. Display profiles are a few KB; the cap keeps a profile from carrying a payload.
 export const ICC_MAX_BYTES = 1048576;
+
+// Parse-time budget (DESIGN 21, T8/T11): bytes inflated from the streams the parser must decode (object and cross-reference
+// streams), per stream and per file, and the longest string or name token inside them. A cap passed is TOO_LARGE.
+export const PARSE_STREAM_MAX_BYTES = 32 * 1024 * 1024;
+export const PARSE_FILE_MAX_BYTES = 64 * 1024 * 1024;
+export const PARSE_TOKEN_MAX_BYTES = 8 * 1024 * 1024;

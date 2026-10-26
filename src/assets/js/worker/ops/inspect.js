@@ -1,6 +1,7 @@
 // Op `inspect`: count the pages of one PDF, or say why it cannot be used.
 // The library recovers silently from several kinds of damage, so the checks here are our own.
 import { EngineError, isResourceError } from '../errors.js';
+import { checkParseBudget } from '../budget.js';
 
 const EOF_WINDOW = 1024; // the end-of-file marker must sit in the last 1,024 bytes
 const KNOWN_FILTERS = new Set(['Standard']);
@@ -77,6 +78,7 @@ function checkPageTree(lib, doc, budget) {
 export async function loadPdf(lib, bytes, index) {
   const { PDFDocument, PDFName, PDFDict, PDFNumber } = lib;
   if (!hasEofMarker(bytes)) throw new EngineError('DAMAGED', index);
+  await checkParseBudget(bytes, index);
   let doc;
   try {
     doc = await PDFDocument.load(bytes, { password: '', updateMetadata: false });
