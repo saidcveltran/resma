@@ -14,6 +14,7 @@
 //   - A 16-bit PNG, or one the library cannot embed, is redrawn on an OffscreenCanvas as an 8-bit PNG;
 //     the canvas and the bitmap are released after use.
 import { EngineError, isResourceError } from '../errors.js';
+import { ICC_MAX_BYTES } from '../../config.js';
 import { readJpegInfo, readPngInfo, checkPngChunks } from '../exif.js';
 import { place } from '../layout.js';
 import { readFiles } from './inspect.js';
@@ -61,8 +62,8 @@ function shorten(b, marker, size, at) {
   return out;
 }
 
-// True when the chunks of an ICC_PROFILE (sequence numbers 1..n, each once) join into a profile whose size field
-// equals its length and that has `acsp` at offset 36.
+// True when the chunks of an ICC_PROFILE (sequence numbers 1..n, each once) join into a profile of at most
+// ICC_MAX_BYTES whose size field equals its length and that has `acsp` at offset 36.
 function parsesAsIcc(b, chunks) {
   const parts = new Array(chunks.length).fill(null);
   let total = 0;
@@ -72,24 +73,59 @@ function parsesAsIcc(b, chunks) {
     parts[seq - 1] = b.subarray(c.at + 14, c.to);
     total += parts[seq - 1].length;
   }
-  if (total < 128) return false;
+  if (total < 128 || total > ICC_MAX_BYTES) return false;
   const p = new Uint8Array(total);
   let at = 0;
   for (const part of parts) { p.set(part, at); at += part.length; }
   return u32(p, 0) === total && typeAt(p, 36) === 'acsp';
 }
 
+// Does the payload (n bytes at p) of a header that stays have exactly the length its structure says? DQT: tables of
+// 1 + 64 or 1 + 128 bytes. DHT: 1 + 16 counts + as many symbols as the counts add up to. SOF: 6 + 3 per component.
+// SOS: 4 + 2 per component. DRI and DNL: 2. DAC: pairs. Anything past the tables (padding, text) fails.
+function wellFormed(b, marker, p, n) {
+  if (marker === 0xdd || marker === 0xdc) return n === 2;
+  if (marker === 0xcc) return n >= 2 && n % 2 === 0;
+  if (marker === 0xda) return b[p] >= 1 && b[p] <= 4 && n === 4 + 2 * b[p];
+  if (marker === 0xdb) {
+    let at = 0;
+    while (at < n && b[p + at] >> 4 <= 1 && (b[p + at] & 15) <= 3) at += 1 + (b[p + at] >> 4 ? 128 : 64);
+    return n > 0 && at === n;
+  }
+  if (marker === 0xc4) {
+    let at = 0;
+    while (at + 17 <= n) {
+      let symbols = 0;
+      for (let k = 1; k <= 16; k += 1) symbols += b[p + at + k];
+      if (symbols > 256) return false;
+      at += 17 + symbols;
+    }
+    return n > 0 && at === n;
+  }
+  return (b[p + 5] === 1 || b[p + 5] === 3 || b[p + 5] === 4) && n === 6 + 3 * b[p + 5]; // a frame header
+}
+
+// Only these headers stay, before the first scan (DQT, DHT, DRI, DAC, one frame header, the scan header and the
+// three APP segments above) and after it (DQT, DHT, DRI, DAC, DNL once, scan headers): each must be exactly as long as
+// its structure. Reserved and extension markers (JPG, JPG0-13, DHP, EXP, a DNL before the scan) are dropped like
+// COM and the other APPn. A second SOI or a second frame header is DAMAGED. At most one JFIF and one Adobe segment
+// stay, only before the scan, and so do ICC chunks (decision 51).
 export function stripJpegMetadata(b) {
   const len = b.length;
   let cuts = []; // { from, to, rep }: bytes [from, to) are replaced by rep (nothing when rep is null)
   const icc = [];
+  const damagedNow = () => { throw new EngineError('DAMAGED'); };
   let end = len;
   let sawScan = false;
   let ended = false;
+  let frame = false;
+  let dnl = false;
+  let jfif = false;
+  let adobe = false;
   let i = 2;
   while (i < len) {
     if (b[i] !== 0xff) {
-      if (!sawScan) throw new EngineError('DAMAGED'); // a stray byte between the headers
+      if (!sawScan) damagedNow(); // a stray byte between the headers
       i += 1;
       continue;
     }
@@ -98,43 +134,57 @@ export function stripJpegMetadata(b) {
     if (j + 2 >= len && !(sawScan && b[j] === 0xd9)) break; // no room for a marker and its length
     const marker = b[j];
     if (marker === 0xd9 && sawScan) { end = j + 1; ended = true; break; } // the end of the image: nothing after it is kept
-    if (marker === 0x00 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) { i = j + 1; continue; }
-    const size = (b[j + 1] << 8) | b[j + 2];
-    const isApp = (marker >= 0xe0 && marker <= 0xef) || marker === 0xfe;
-    if (size < 2) throw new EngineError('DAMAGED'); // a length shorter than its own two bytes: text follows
-    if (j + 1 + size > len) {
-      if (isApp) throw new EngineError('DAMAGED'); // a metadata segment that runs past the end of the file
+    if (marker === 0xd9 || marker === 0xd8) damagedNow(); // an end before any scan, or a second start
+    if (marker === 0x00 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { // no length: only inside the scan
+      if (!sawScan) damagedNow();
       i = j + 1;
       continue;
     }
+    const size = (b[j + 1] << 8) | b[j + 2];
+    if (size < 2 || j + 1 + size > len) damagedNow(); // a length shorter than itself (text follows), or past the file
     const segmentEnd = j + 1 + size;
-    if (marker === 0xda) sawScan = true;
-    if (isApp) {
-      if (!(KEEP_APP.has(marker) && startsWith(b, j + 3, KEEP_APP.get(marker)))) {
-        cuts.push({ from: i, to: segmentEnd, rep: null });
+    const at = j + 3;
+    const drop = () => cuts.push({ from: i, to: segmentEnd, rep: null });
+    const isFrame = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (isFrame || marker === 0xdb || marker === 0xc4 || marker === 0xdd || marker === 0xcc || marker === 0xda) {
+      if (isFrame && frame) damagedNow(); // a second frame header
+      if (!wellFormed(b, marker, at, size - 2)) damagedNow();
+      if (isFrame) frame = true;
+      if (marker === 0xda) sawScan = true;
+    } else if (marker === 0xdc) { // DNL: the line count, once, after the first scan
+      if (!sawScan) drop();
+      else if (dnl || !wellFormed(b, marker, at, size - 2)) damagedNow();
+      else dnl = true;
+    } else if ((marker >= 0xe0 && marker <= 0xef) || marker === 0xfe) {
+      const wanted = !sawScan && KEEP_APP.has(marker) && startsWith(b, at, KEEP_APP.get(marker));
+      if (!wanted || (marker === 0xe0 && jfif) || (marker === 0xee && adobe)) {
+        drop();
       } else if (marker === 0xe2) {
-        icc.push({ from: i, to: segmentEnd, rep: null, at: j + 3, size });
+        icc.push({ from: i, to: segmentEnd, rep: null, at, size });
         cuts.push(icc[icc.length - 1]);
       } else {
-        const rep = shorten(b, marker, size, j + 3);
+        if (marker === 0xe0) jfif = true; else adobe = true;
+        const rep = shorten(b, marker, size, at);
         if (rep) cuts.push({ from: i, to: segmentEnd, rep });
       }
+    } else {
+      drop(); // reserved, extension and unknown markers
     }
     i = segmentEnd;
   }
-  if (!ended) throw new EngineError('DAMAGED');
+  if (!ended) damagedNow();
   if (icc.length > 0 && parsesAsIcc(b, icc)) cuts = cuts.filter((c) => !icc.includes(c)); // a whole profile stays as it is
   if (cuts.length === 0) return end === len ? b : b.subarray(0, end);
   const out = new Uint8Array(cuts.reduce((n, c) => n + (c.rep ? c.rep.length : 0) - (c.to - c.from), end));
-  let at = 0;
+  let put = 0;
   let from = 0;
   for (const c of cuts) {
-    out.set(b.subarray(from, c.from), at);
-    at += c.from - from;
-    if (c.rep) { out.set(c.rep, at); at += c.rep.length; }
+    out.set(b.subarray(from, c.from), put);
+    put += c.from - from;
+    if (c.rep) { out.set(c.rep, put); put += c.rep.length; }
     from = c.to;
   }
-  out.set(b.subarray(from, end), at);
+  out.set(b.subarray(from, end), put);
   return out;
 }
 
