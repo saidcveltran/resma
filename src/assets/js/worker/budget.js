@@ -1,192 +1,166 @@
-// Parse-time budget (DESIGN 21: T8, T11, SA-7). Before the library parses a PDF it decodes object streams and
-// cross-reference streams in full, and builds every string one character at a time, so a small file can ask for
-// gigabytes. This module looks at those streams first, from our code and without touching the library: it inflates each
-// one with a byte cap (stopping as soon as a cap is passed) and measures the string and name tokens inside object streams.
-// Content and image streams are never decoded by the parser or by this module, and are not counted.
+// Parse-time budget (DESIGN 21: T8, T11, SA-7). The library decodes every object stream and cross-reference stream in full
+// and builds every string one character at a time, so a small file can ask for gigabytes. The budget is enforced on the bytes
+// the library really decodes: at run time, from our own code, the two parser factories it calls for those streams are
+// replaced by guarded ones (the vendored file is not touched). Each guard decodes the stream first with a byte cap, using the
+// library's own decoder, so a stream is never fully materialised past the cap; then it checks the header and, for an object
+// stream, meters how many bytes the library walks to parse each object. A cap passed is remembered on the load in progress
+// (the library swallows errors thrown while it parses an object) and withParseBudget() turns it into TOO_LARGE.
+// Content and image streams are never decoded by the parser and are not counted.
 import { EngineError } from './errors.js';
-import { PARSE_STREAM_MAX_BYTES, PARSE_FILE_MAX_BYTES, PARSE_TOKEN_MAX_BYTES } from '../config.js';
+import { PARSE_STREAM_MAX_BYTES, PARSE_FILE_MAX_BYTES, PARSE_TOKEN_MAX_BYTES, PARSE_OBJECTS_MAX } from '../config.js';
 
-const DEFAULT_LIMITS = Object.freeze({
-  streamMax: PARSE_STREAM_MAX_BYTES, fileMax: PARSE_FILE_MAX_BYTES, tokenMax: PARSE_TOKEN_MAX_BYTES,
+export const DEFAULT_LIMITS = Object.freeze({
+  streamMax: PARSE_STREAM_MAX_BYTES, fileMax: PARSE_FILE_MAX_BYTES, tokenMax: PARSE_TOKEN_MAX_BYTES, objectsMax: PARSE_OBJECTS_MAX,
 });
-const DICT_WINDOW = new TextDecoder('latin1');
-const FEED = 4096; // compressed bytes handed to the inflater per write
-const PIECE = 65536; // an unfiltered stream is fed to the token reader in pieces of this size
+export const GUARDED = Symbol.for('resma.parseBudget');
 
-const isSpace = (b) => b === 32 || b === 9 || b === 10 || b === 13 || b === 12 || b === 0;
-const isDelimiter = (b) => b === 40 || b === 41 || b === 60 || b === 62 || b === 91 || b === 93 || b === 123 || b === 125
-  || b === 47 || b === 37;
+let active = null; // the session of the load in progress
 
-function at(bytes, pos, word) {
-  if (pos < 0 || pos + word.length > bytes.length) return false;
-  for (let i = 0; i < word.length; i++) if (bytes[pos + i] !== word.charCodeAt(i)) return false;
-  return true;
+function newSession(limits) {
+  return { limits, tripped: null, decoded: 0, objectStreams: 0, xrefStreams: 0 };
 }
 
-function indexOfWord(bytes, word, from) {
-  const first = word.charCodeAt(0);
-  for (let i = bytes.indexOf(first, from); i !== -1; i = bytes.indexOf(first, i + 1)) {
-    if (at(bytes, i, word)) return i;
+function trip(session, reason) {
+  if (session.tripped === null) session.tripped = reason;
+  throw new EngineError('TOO_LARGE');
+}
+
+const inRange = (n, max) => Number.isSafeInteger(n) && n >= 0 && n <= max;
+
+// Decodes `rawStream` the way the library will (same filters, already decrypted), stopping as soon as a cap is passed.
+// Returns the decoded size. A stream the library cannot decode throws here what it would throw there.
+function decodedSize(lib, rawStream, session) {
+  const room = Math.min(session.limits.streamMax, session.limits.fileMax - session.decoded);
+  const stream = lib.decodePDFRawStream(rawStream);
+  // Every decoder of the chain asks for its buffer before it writes past it: refuse the growth beyond the cap.
+  for (let s = stream, hops = 0; s !== null && typeof s === 'object' && hops < 64; s = s.stream ?? s.str, hops++) {
+    if (typeof s.ensureBuffer !== 'function') continue;
+    const grow = s.ensureBuffer;
+    s.ensureBuffer = (n) => {
+      if (!(n <= room)) trip(session, 'stream');
+      return grow.call(s, n);
+    };
   }
-  return -1;
-}
-
-// The next "stream" keyword at or after `from`: preceded by ">>" (blanks allowed), not part of "endstream", and followed
-// by the end of a line. Returns its position, or -1.
-function nextStreamKeyword(bytes, from) {
-  for (let i = indexOfWord(bytes, 'stream', from); i !== -1; i = indexOfWord(bytes, 'stream', i + 1)) {
-    if (i >= 3 && at(bytes, i - 3, 'end')) continue;
-    const after = bytes[i + 6];
-    if (after !== 10 && after !== 13) continue;
-    let p = i - 1;
-    while (p >= 0 && isSpace(bytes[p])) p--;
-    if (p >= 1 && bytes[p] === 62 && bytes[p - 1] === 62) return i;
-  }
-  return -1;
-}
-
-// Text of the dictionary that ends at `keyword`: from the "obj" before it (not below `floor`) to the keyword. Names are
-// returned with their # escapes resolved, so /Obj#53tm is read as /ObjStm.
-function dictionaryBefore(bytes, keyword, floor) {
-  let start = floor;
-  for (let j = keyword - 3; j >= floor; j--) {
-    if (bytes[j] === 111 && bytes[j + 1] === 98 && bytes[j + 2] === 106 && j > 0 && bytes[j - 1] !== 100) { start = j + 3; break; }
-  }
-  return DICT_WINDOW.decode(bytes.subarray(start, keyword))
-    .replace(/#([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-}
-
-// Where the stream data ends: the direct /Length when "endstream" follows it, else the next "endstream".
-function dataEnd(bytes, dict, start) {
-  const m = /\/Length\s+(\d+)(?!\d)(?!\s+\d+\s+R)/.exec(dict);
-  if (m) {
-    const end = start + Number(m[1]);
-    if (end <= bytes.length) {
-      let p = end;
-      while (p < bytes.length && isSpace(bytes[p])) p++;
-      if (at(bytes, p, 'endstream')) return { end, next: p + 9 };
+  let size;
+  if (typeof stream.readBlock === 'function') {
+    while (!stream.eof) {
+      stream.readBlock();
+      if (stream.bufferLength > room) trip(session, 'stream');
     }
+    size = stream.bufferLength;
+  } else {
+    size = stream.length;
   }
-  const found = indexOfWord(bytes, 'endstream', start);
-  if (found === -1) return { end: bytes.length, next: bytes.length };
-  let end = found;
-  if (end > start && bytes[end - 1] === 10) end--;
-  if (end > start && bytes[end - 1] === 13) end--;
-  return { end, next: found + 9 };
+  if (!(size <= room)) trip(session, 'stream');
+  session.decoded += size;
+  return size;
 }
 
-// What the parser decodes: an object stream (tokens are measured) or a cross-reference stream (bytes are only counted).
-function kindOf(dict) {
-  const m = /\/Type\s*\/(ObjStm|XRef)(?![^\s/<>[\]()%])/.exec(dict);
-  return m ? m[1] : null;
-}
-
-// 'none', 'flate', or 'other' (a chain this module cannot bound).
-function filterOf(dict) {
-  const m = /\/Filter\s*(\[[^\]]*\]|\/[^\s/<>[\]()%]+)/.exec(dict);
-  if (!m) return 'none';
-  const names = [...m[1].matchAll(/\/([^\s/<>[\]()%]+)/g)].map((x) => x[1]);
-  return names.length === 1 && (names[0] === 'FlateDecode' || names[0] === 'Fl') ? 'flate' : 'other';
-}
-
-// Inflated chunks of one zlib stream. The compressed bytes go in a few KB at a time, and no more are written once the
-// caller stops asking, so a reader that inflates a whole input chunk at once (WebKit) still produces only a few MB per
-// step: deflate cannot expand more than about 1,000 to 1. A stream that is corrupt (or encrypted: then it is not zlib
-// data) simply ends: the parser deals with it.
-async function* inflated(data) {
-  const ds = new DecompressionStream('deflate');
-  const writer = ds.writable.getWriter();
-  const reader = ds.readable.getReader();
-  let stopped = false;
-  (async () => {
-    for (let i = 0; i < data.length && !stopped; i += FEED) await writer.write(data.slice(i, i + FEED));
-    if (!stopped) await writer.close();
-  })().catch(() => {});
-  try {
-    for (;;) {
-      let step;
-      try { step = await reader.read(); } catch { return; }
-      if (step.done) return;
-      yield step.value;
-    }
-  } finally {
-    stopped = true;
-    reader.cancel().catch(() => {});
-    writer.abort().catch(() => {});
-  }
-}
-
-async function* pieces(data) {
-  for (let i = 0; i < data.length; i += PIECE) yield data.subarray(i, i + PIECE);
-}
-
-// A reader of PDF syntax that only measures strings and names, chunk after chunk. feed() returns true as soon as one
-// token is longer than `max` (hex digits count, not bytes).
-function tokenMeter(max) {
-  const N = 0, STR = 1, HEX = 2, NAME = 3, COMMENT = 4;
-  let state = N, depth = 0, escaped = false, len = 0, lt = false;
-  return function feed(chunk) {
-    for (let k = 0; k < chunk.length; k++) {
-      const c = chunk[k];
-      if (state === N && lt && c !== 60) { state = HEX; len = 0; lt = false; }
-      if (state === N) {
-        if (c === 40) { state = STR; depth = 1; escaped = false; len = 0; } else if (c === 60) lt = !lt;
-        else if (c === 47) { state = NAME; len = 0; } else if (c === 37) state = COMMENT;
-      } else if (state === STR) {
-        if (escaped) { escaped = false; len++; } else if (c === 92) escaped = true;
-        else if (c === 40) { depth++; len++; } else if (c === 41) { if (--depth === 0) state = N; else len++; } else len++;
-      } else if (state === HEX) {
-        if (c === 62) state = N; else if (!isSpace(c)) len++;
-      } else if (state === NAME) {
-        if (isSpace(c) || isDelimiter(c)) {
-          state = N;
-          if (c === 40) { state = STR; depth = 1; escaped = false; len = 0; } else if (c === 60) lt = true;
-          else if (c === 47) { state = NAME; len = 0; } else if (c === 37) state = COMMENT;
-        } else len++;
-      } else if (c === 10 || c === 13) state = N;
-      if (len > max) return true;
-    }
-    return false;
+function guardObjectStreams(lib, original) {
+  return function forStream(rawStream, ...rest) {
+    const session = active ?? newSession(DEFAULT_LIMITS);
+    if (session.tripped !== null) throw new EngineError('TOO_LARGE');
+    const { tokenMax, objectsMax } = session.limits;
+    const size = decodedSize(lib, rawStream, session);
+    session.objectStreams++;
+    const parser = original.call(this, rawStream, ...rest);
+    if (!inRange(parser.objectCount, objectsMax) || !inRange(parser.firstOffset, size)) trip(session, 'header');
+    const readHeader = parser.parseOffsetsAndObjectNumbers;
+    parser.parseOffsetsAndObjectNumbers = function parseOffsetsAndObjectNumbers() {
+      const entries = readHeader.call(this);
+      let previous = -1;
+      for (const { offset } of entries) {
+        if (!Number.isSafeInteger(offset) || offset <= previous || parser.firstOffset + offset >= size) trip(session, 'header');
+        previous = offset;
+      }
+      return entries;
+    };
+    // Objects start at strictly increasing offsets, so an honest stream is walked once: no object can take more than the
+    // token cap, and all of them together no more than the stream is long. The library reads every byte through
+    // bytes.next(), so the walk is metered as it happens and a long string or name stops at the cap, not after it is built.
+    const parseObject = parser.parseObject;
+    const bytes = parser.bytes;
+    const next = bytes.next;
+    let depth = 0, from = 0, walked = 0;
+    const over = (position) => position - from > tokenMax || walked + position - from > size;
+    bytes.next = function guardedNext() {
+      if (depth > 0 && over(this.idx)) trip(session, 'token');
+      return next.call(this);
+    };
+    parser.parseObject = function guardedParseObject(...args) {
+      if (depth === 0) from = this.bytes.offset();
+      depth++;
+      try {
+        return parseObject.apply(this, args);
+      } finally {
+        depth--;
+        if (depth === 0) {
+          const used = Math.max(0, this.bytes.offset() - from);
+          if (over(from + used)) trip(session, 'token');
+          walked += used;
+        }
+      }
+    };
+    return parser;
   };
 }
 
-// Looks at every object stream and cross-reference stream of the file. Resolves to
-// { ok: true, inflated, streams } or { ok: false, reason: 'stream' | 'file' | 'token' | 'filter', inflated, streams };
-// `inflated` is the number of bytes read so far, which is at most one chunk past a cap that was passed.
-export async function scanParseBudget(bytes, limits = DEFAULT_LIMITS) {
-  const { streamMax, fileMax, tokenMax } = limits;
-  let total = 0, streams = 0, floor = 0, from = 0;
-  const stop = (reason) => ({ ok: false, reason, inflated: total, streams });
-  for (;;) {
-    const keyword = nextStreamKeyword(bytes, from);
-    if (keyword === -1) return { ok: true, inflated: total, streams };
-    const dict = dictionaryBefore(bytes, keyword, floor);
-    let start = keyword + 6;
-    if (bytes[start] === 13 && bytes[start + 1] === 10) start += 2; else start += 1;
-    const { end, next } = dataEnd(bytes, dict, start);
-    floor = next;
-    from = next;
-    const kind = kindOf(dict);
-    if (kind === null) continue;
-    const filter = filterOf(dict);
-    if (filter === 'other') return stop('filter');
-    streams++;
-    const data = bytes.subarray(start, Math.max(start, end));
-    const meter = kind === 'ObjStm' ? tokenMeter(tokenMax) : null;
-    let own = 0;
-    for await (const chunk of filter === 'flate' ? inflated(data) : pieces(data)) {
-      own += chunk.length;
-      total += chunk.length;
-      if (own > streamMax) return stop('stream');
-      if (total > fileMax) return stop('file');
-      if (meter && meter(chunk)) return stop('token');
-    }
-  }
+function guardXrefStreams(lib, original) {
+  return function forStream(rawStream, ...rest) {
+    const session = active ?? newSession(DEFAULT_LIMITS);
+    if (session.tripped !== null) throw new EngineError('TOO_LARGE');
+    decodedSize(lib, rawStream, session);
+    session.xrefStreams++;
+    const parser = original.call(this, rawStream, ...rest);
+    let entries = 0;
+    for (const { length } of Array.isArray(parser.subsections) ? parser.subsections : [{ length: NaN }]) entries += length;
+    if (!inRange(entries, session.limits.objectsMax)) trip(session, 'header');
+    return parser;
+  };
 }
 
-// Throws EngineError TOO_LARGE for a cap that was passed, and DAMAGED for a stream whose filters cannot be bounded.
-export async function checkParseBudget(bytes, index, limits = DEFAULT_LIMITS) {
-  const r = await scanParseBudget(bytes, limits);
-  if (!r.ok) throw new EngineError(r.reason === 'filter' ? 'DAMAGED' : 'TOO_LARGE', index);
-  return r;
+function isGuarded(fn) {
+  return typeof fn === 'function' && fn[GUARDED] === true;
+}
+
+// Installs the guards on the library's classes. Idempotent. Throws INTERNAL if the library does not offer what the guards
+// need, or if a guard could not be put in place: a load must never run without the budget.
+export function installParseBudget(lib) {
+  const objectStreams = lib?.PDFObjectStreamParser;
+  const xrefStreams = lib?.PDFXRefStreamParser;
+  if (typeof objectStreams?.forStream !== 'function' || typeof xrefStreams?.forStream !== 'function'
+    || typeof lib.decodePDFRawStream !== 'function') throw new EngineError('INTERNAL');
+  try {
+    for (const [owner, make] of [[objectStreams, guardObjectStreams], [xrefStreams, guardXrefStreams]]) {
+      if (isGuarded(owner.forStream)) continue;
+      const guarded = make(lib, owner.forStream);
+      Object.defineProperty(guarded, GUARDED, { value: true });
+      owner.forStream = guarded;
+    }
+  } catch {
+    throw new EngineError('INTERNAL');
+  }
+  if (!isGuarded(objectStreams.forStream) || !isGuarded(xrefStreams.forStream)) throw new EngineError('INTERNAL');
+}
+
+// Runs `work` (a library load) under the budget. Resolves to { value, usage }. A cap passed anywhere in the load is
+// TOO_LARGE with the file index, whatever else the library did with the failure. Loads do not overlap.
+export async function withParseBudget(lib, work, index, limits = DEFAULT_LIMITS) {
+  installParseBudget(lib);
+  if (active !== null) throw new EngineError('INTERNAL', index);
+  const session = newSession(limits);
+  active = session;
+  let value, error, failed = false;
+  try {
+    value = await work();
+  } catch (err) {
+    failed = true;
+    error = err;
+  } finally {
+    active = null;
+  }
+  if (session.tripped !== null) throw new EngineError('TOO_LARGE', index);
+  if (failed) throw error;
+  const { decoded, objectStreams, xrefStreams } = session;
+  return { value, usage: { decoded, objectStreams, xrefStreams } };
 }

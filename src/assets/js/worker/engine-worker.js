@@ -12,10 +12,11 @@ let failed = false;
 // Loaded with import() inside try/catch so that a failed start is reported, not silent.
 const started = (async () => {
   try {
-    const [lib, inspect, merge, images] = await Promise.all([
-      import(VENDOR_URL), import('./ops/inspect.js'), import('./ops/merge.js'), import('./ops/images.js'),
+    const [lib, inspect, merge, images, budget] = await Promise.all([
+      import(VENDOR_URL), import('./ops/inspect.js'), import('./ops/merge.js'), import('./ops/images.js'), import('./budget.js'),
     ]);
     if (typeof lib.PDFDocument?.create !== 'function') throw new Error('engine-missing');
+    budget.installParseBudget(lib); // before any load: the parse-time budget (S-021d)
     opMap.inspect = (m) => inspect.run(m, lib);
     opMap.merge = (m, progress) => merge.run(m, lib, progress);
     opMap.images = (m, progress) => images.run(m, lib, progress, globalThis);

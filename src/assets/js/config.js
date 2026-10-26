@@ -47,8 +47,10 @@ export const THUMBNAIL_MAX_PIXELS = 64000000;
 // converts. Display profiles are a few KB; the cap keeps a profile from carrying a payload.
 export const ICC_MAX_BYTES = 1048576;
 
-// Parse-time budget (DESIGN 21, T8/T11): bytes inflated from the streams the parser must decode (object and cross-reference
-// streams), per stream and per file, and the longest string or name token inside them. A cap passed is TOO_LARGE.
+// Parse-time budget (DESIGN 21, T8/T11): bytes decoded from the streams the parser must decode (object and cross-reference
+// streams), per stream and per file; the most bytes one object of an object stream may take to parse (a string or name token
+// cannot be longer); and the most objects one object stream or cross-reference stream may list. A cap passed is TOO_LARGE.
 export const PARSE_STREAM_MAX_BYTES = 32 * 1024 * 1024;
 export const PARSE_FILE_MAX_BYTES = 64 * 1024 * 1024;
-export const PARSE_TOKEN_MAX_BYTES = 8 * 1024 * 1024;
+export const PARSE_TOKEN_MAX_BYTES = 4 * 1024 * 1024;
+export const PARSE_OBJECTS_MAX = 1000000;
