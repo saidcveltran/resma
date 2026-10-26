@@ -54,3 +54,5 @@ export const PARSE_STREAM_MAX_BYTES = 32 * 1024 * 1024;
 export const PARSE_FILE_MAX_BYTES = 64 * 1024 * 1024;
 export const PARSE_TOKEN_MAX_BYTES = 4 * 1024 * 1024;
 export const PARSE_OBJECTS_MAX = 1000000;
+// The most filters one object or cross-reference stream may list in its /Filter array; a longer chain is DAMAGED (real files use one or two).
+export const PARSE_FILTERS_MAX = 8;
