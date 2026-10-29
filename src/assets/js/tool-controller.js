@@ -347,9 +347,10 @@ export function createTool(def, root = document) {
   (root.documentElement || root).dataset.tool = 'ready';
 }
 
-// Starts the tool on the current page, unless the browser cannot run the engine (app.js says so).
+// Starts the tool on the current page, unless the browser cannot run the engine (app.js says so, with the same two checks:
+// a Worker, and DecompressionStream for the PNG path inside it). Left unwired, no job can end in INTERNAL for that reason.
 export function bootTool(def, root = document) {
-  if (typeof Worker === 'undefined') {
+  if (typeof Worker === 'undefined' || typeof DecompressionStream !== 'function') {
     const choose = root.querySelector('[data-choose]');
     if (choose) choose.setAttribute('aria-disabled', 'true');
     return null;

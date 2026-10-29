@@ -154,6 +154,18 @@ function guardDocumentParsers(lib, original) {
       if (from >= 0 && this.offset() - from > tokenMax) trip(session, 'token');
       return next.call(this);
     };
+    // A pass without a cipher over an encrypted file reads ciphertext: its object-stream headers say nothing about the file, so
+    // damage noted there is dropped once the pass shows /Encrypt. The pass with the cipher judges the file; with a password
+    // that fails it never runs and the load ends PROTECTED. A cap passed (tripped) is never dropped: the memory was spent.
+    const parseDocument = parser.parseDocument;
+    if (args[5] === undefined && typeof parseDocument === 'function') {
+      parser.parseDocument = async function guardedParseDocument(...rest) {
+        const before = session.damaged;
+        const context = await parseDocument.apply(this, rest);
+        if (context?.lookup?.(context.trailerInfo?.Encrypt)) session.damaged = before;
+        return context;
+      };
+    }
     for (const name of TOKEN_METHODS) {
       const method = parser[name];
       if (typeof method !== 'function') throw new EngineError('INTERNAL');

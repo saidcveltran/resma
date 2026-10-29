@@ -13,12 +13,14 @@ import gzip
 import hashlib
 import html
 import json
+import os
 import posixpath
 import re
 import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import unicodedata
 from pathlib import Path
 
@@ -48,14 +50,17 @@ STATIC_FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-
 SCRIPT_TAG_RE = re.compile(r"<script\b[^>]*>", re.I)
 SCRIPT_TYPE_RE = re.compile(r'\btype="module"')
 SCRIPT_SRC_RE = re.compile(r'\bsrc="([^"]+)"')
-# A static import or re-export of a relative module, at the start of a line (comments and strings are not statements).
+# A static import or re-export of a relative module (import ... from, bare import, export {..} from, export * from,
+# export * as name from), at the start of a line or after a statement or block on the same line (; or }).
 # Dynamic import() is not followed: it loads after the page is ready.
-IMPORT_RE = re.compile(r"^[ \t]*(?:import\s*(?:[^;'\"]*?\bfrom\s*)?|export\s*(?:\*|\{[^}]*\})\s*from\s*)['\"](\.{1,2}/[^'\"]+)['\"]",
+IMPORT_RE = re.compile(r"(?:^|[;}])[ \t]*(?:import\s*(?:[^;'\"]*?\bfrom\s*)?"
+                       r"|export\s*(?:\*(?:\s*as\s+[A-Za-z_$][\w$]*)?|\{[^}]*\})\s*from\s*)['\"](\.{1,2}/[^'\"]+)['\"]",
                        re.M)
 LICENCE_FILE_RE = re.compile(r"/licencias/[A-Za-z0-9][A-Za-z0-9._-]*\.txt")  # the licence texts under /licencias/
 BASE_URL_RE = re.compile(r"https://[a-z0-9.-]+")
 REPARSE_POINT = 0x400  # Windows FILE_ATTRIBUTE_REPARSE_POINT: symlinks, junctions, mount points
-STATIC_REFUSED = ("_redirects", "_headers")
+STATIC_REFUSED = ("_redirects", "_headers", "build-manifest.json")
+ENGINE_PREFIXES = ("vendor/", "js/worker/")  # the engine class of the budget (DESIGN 5.4): loaded by the worker, not App JS
 BUDGET_KEYS = ("css_gzip_kb", "js_gzip_kb", "engine_gzip_kb", "fonts_max_files", "fonts_total_kb",
                "html_gzip_kb", "first_view_gzip_kb")
 
@@ -110,12 +115,32 @@ def read_json(path, what):
 
 # ---------------------------------------------------------------- environment and vendor
 
+def which_outside_cwd(name):
+    """Absolute path of an executable found on PATH alone, never in the current directory (audit SEC-B05): on Windows
+    shutil.which looks in the current directory first, so a node.cmd at the checkout root would run in place of node.
+    PATH entries that are empty or "." are dropped and the search runs from a fresh empty directory, so even an entry
+    that Windows treats as the current directory finds nothing. None when nothing is found."""
+    entries = [e for e in os.environ.get("PATH", "").split(os.pathsep) if e.strip() and e.strip() != "."]
+    home = os.getcwd()
+    neutral = tempfile.mkdtemp(prefix="resma-which-")
+    try:
+        os.chdir(neutral)
+        found = shutil.which(name, path=os.pathsep.join(entries))
+    finally:
+        os.chdir(home)
+        try:
+            os.rmdir(neutral)
+        except OSError:
+            pass
+    return str(Path(found).resolve()) if found else None
+
+
 def check_environment(root, site):
     """Node major (from site.json only) and the lockfile. Raises BuildError with exit code 2."""
     want = site.get("node_major")
     if not isinstance(want, int) or isinstance(want, bool):
         raise BuildError("environment check failed: site.json needs an integer node_major", EXIT_ENV)
-    node = shutil.which("node")
+    node = which_outside_cwd("node")
     if not node:
         raise BuildError("environment check failed: node not found on PATH", EXIT_ENV)
     try:
@@ -445,8 +470,8 @@ def check_output_paths(files):
 
 
 def page_worker_modules(html_text, page, js_sources, assets_prefix):
-    """The js/worker/ modules a page loads in its first view: those its module scripts import, directly or through other
-    modules (static imports only). Raises BuildError for a relative import that is not in the build."""
+    """The engine modules (js/worker/ and vendor/) a page loads in its first view: those its module scripts import, directly
+    or through other modules (static imports only). Raises BuildError for a relative import that is not in the build."""
     queue = []
     for tag in SCRIPT_TAG_RE.findall(html_text):
         src = SCRIPT_SRC_RE.search(tag)
@@ -465,7 +490,7 @@ def page_worker_modules(html_text, page, js_sources, assets_prefix):
             if target not in js_sources:
                 raise BuildError(f"{rel} imports {spec}, which is not in the build")
             queue.append(target)
-    return sorted(rel for rel in seen if rel.startswith("js/worker/"))
+    return sorted(rel for rel in seen if rel.startswith(ENGINE_PREFIXES))
 
 
 def check_budget(site, files, assets_prefix, pages):
@@ -485,12 +510,11 @@ def check_budget(site, files, assets_prefix, pages):
     css = sum(s for p, s in gz.items() if p.startswith(assets_prefix) and p.endswith(".css"))
     # Engine class: the vendored library plus the worker modules (they load inside the worker after
     # the page is ready). App JS class: the page modules only (decision 16).
-    engine_prefixes = ("vendor/", "js/worker/")
     js_files = {p[len(assets_prefix):]: n for p, n in gz.items() if p.startswith(assets_prefix) and p.endswith(".js")}
-    engine = sum(n for rel, n in js_files.items() if rel.startswith(engine_prefixes))
-    js = sum(n for rel, n in js_files.items() if not rel.startswith(engine_prefixes))
-    # A worker module that a page module imports loads in that page's first view (decision 67); it stays in the engine
-    # class and is not App JS.
+    engine = sum(n for rel, n in js_files.items() if rel.startswith(ENGINE_PREFIXES))
+    js = sum(n for rel, n in js_files.items() if not rel.startswith(ENGINE_PREFIXES))
+    # A worker module (or the vendored library) that a page module imports loads in that page's first view (decision 67,
+    # SEC-B02); it stays in the engine class and is not App JS.
     js_sources = {rel: files[assets_prefix + rel].decode("utf-8", errors="replace") for rel in js_files}
     check("css total", css, b["css_gzip_kb"] * kb, "5.4 CSS")
     check("app js page modules", js, b["js_gzip_kb"] * kb, "5.4 App JS")
@@ -581,12 +605,19 @@ def build(root):
         if name not in static:
             raise BuildError(f"site.json static_files entry {name} is not in static/")
     root_files = []
+    taken = {name.casefold(): name for name in files}  # what the build already holds, by case-folded name (SEC-B01)
     for rel, data in static.items():
         if rel.lower() in STATIC_REFUSED:
             raise BuildError(f"static/{rel} is not allowed: it is generated or not part of the Design")
         if rel not in listed and not rel.lower().startswith("licencias/"):
             raise BuildError(f"static/{rel} is not in the allowlist: list it in site.json static_files "
                              f"(or verification_files) or remove it")
+        if rel.casefold().split("/")[0] == "assets":
+            raise BuildError(f"static/{rel} is not allowed: the assets folder is built from src/assets, never from static/")
+        if rel.casefold() in taken:
+            raise BuildError(f"static/{rel} collides with {taken[rel.casefold()]}, which the build already holds "
+                             f"(same name, ignoring case)")
+        taken[rel.casefold()] = rel
         files[rel] = data
         if "/" not in rel:
             root_files.append("/" + rel)
@@ -597,6 +628,8 @@ def build(root):
         if r["in_sitemap"]:
             sitemap.append(f"  <url><loc>{html.escape(site['base_url'] + r['path'])}</loc></url>")
     sitemap.append("</urlset>")
+    if "sitemap.xml" in taken and "sitemap.xml" not in files:
+        raise BuildError(f"static/{taken['sitemap.xml']} collides with the generated sitemap.xml (same name, ignoring case)")
     if "sitemap.xml" not in files:
         files["sitemap.xml"] = ("\n".join(sitemap) + "\n").encode("utf-8")
         root_files.append("/sitemap.xml")
