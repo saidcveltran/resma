@@ -13,6 +13,7 @@ import gzip
 import hashlib
 import html
 import json
+import posixpath
 import re
 import shutil
 import stat
@@ -43,6 +44,14 @@ SOURCEMAP_ANY_RE = re.compile(rb"^//# sourceMappingURL=", re.M)
 ROUTE_RE = re.compile(r"/(?:[a-z0-9-]+/)*")  # always used with fullmatch
 SEGMENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 ROOT_FILE_RE = re.compile(r"/[A-Za-z0-9][A-Za-z0-9._-]*")
+STATIC_FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*")  # a path under static/, always fullmatch
+SCRIPT_TAG_RE = re.compile(r"<script\b[^>]*>", re.I)
+SCRIPT_TYPE_RE = re.compile(r'\btype="module"')
+SCRIPT_SRC_RE = re.compile(r'\bsrc="([^"]+)"')
+# A static import or re-export of a relative module, at the start of a line (comments and strings are not statements).
+# Dynamic import() is not followed: it loads after the page is ready.
+IMPORT_RE = re.compile(r"^[ \t]*(?:import\s*(?:[^;'\"]*?\bfrom\s*)?|export\s*(?:\*|\{[^}]*\})\s*from\s*)['\"](\.{1,2}/[^'\"]+)['\"]",
+                       re.M)
 LICENCE_FILE_RE = re.compile(r"/licencias/[A-Za-z0-9][A-Za-z0-9._-]*\.txt")  # the licence texts under /licencias/
 BASE_URL_RE = re.compile(r"https://[a-z0-9.-]+")
 REPARSE_POINT = 0x400  # Windows FILE_ATTRIBUTE_REPARSE_POINT: symlinks, junctions, mount points
@@ -177,6 +186,11 @@ def load_site(root):
     vf = site.get("verification_files", [])
     if not isinstance(vf, list) or not all(isinstance(x, str) for x in vf):
         raise BuildError("site.json field verification_files must be a list of strings", EXIT_ENV)
+    sf = site.get("static_files", [])
+    if not isinstance(sf, list) or not all(isinstance(x, str) and STATIC_FILE_RE.fullmatch(x) for x in sf):
+        raise BuildError("site.json field static_files must be a list of plain file paths under static/", EXIT_ENV)
+    if len(set(sf)) != len(sf):
+        raise BuildError("site.json field static_files lists a file twice", EXIT_ENV)
     nf = site.get("not_found")
     if not isinstance(nf, dict) or not all(isinstance(nf.get(k), str) for k in ("title", "description", "h1")):
         raise BuildError("site.json field not_found needs the text fields title, description and h1", EXIT_ENV)
@@ -430,6 +444,30 @@ def check_output_paths(files):
             raise BuildError(f"{rel} must not be shipped (SA-12)")
 
 
+def page_worker_modules(html_text, page, js_sources, assets_prefix):
+    """The js/worker/ modules a page loads in its first view: those its module scripts import, directly or through other
+    modules (static imports only). Raises BuildError for a relative import that is not in the build."""
+    queue = []
+    for tag in SCRIPT_TAG_RE.findall(html_text):
+        src = SCRIPT_SRC_RE.search(tag)
+        if SCRIPT_TYPE_RE.search(tag) and src and src.group(1).startswith("/" + assets_prefix):
+            queue.append(src.group(1)[len(assets_prefix) + 1:])
+    seen = set()
+    while queue:
+        rel = queue.pop()
+        if rel in seen:
+            continue
+        seen.add(rel)
+        if rel not in js_sources:
+            raise BuildError(f"{page}: module {rel} is not in the build")
+        for spec in IMPORT_RE.findall(js_sources[rel]):
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(rel), spec))
+            if target not in js_sources:
+                raise BuildError(f"{rel} imports {spec}, which is not in the build")
+            queue.append(target)
+    return sorted(rel for rel in seen if rel.startswith("js/worker/"))
+
+
 def check_budget(site, files, assets_prefix, pages):
     """Return the report lines; raise BuildError on any breach (DESIGN 5.4)."""
     b = site["budget"]
@@ -451,6 +489,9 @@ def check_budget(site, files, assets_prefix, pages):
     js_files = {p[len(assets_prefix):]: n for p, n in gz.items() if p.startswith(assets_prefix) and p.endswith(".js")}
     engine = sum(n for rel, n in js_files.items() if rel.startswith(engine_prefixes))
     js = sum(n for rel, n in js_files.items() if not rel.startswith(engine_prefixes))
+    # A worker module that a page module imports loads in that page's first view (decision 67); it stays in the engine
+    # class and is not App JS.
+    js_sources = {rel: files[assets_prefix + rel].decode("utf-8", errors="replace") for rel in js_files}
     check("css total", css, b["css_gzip_kb"] * kb, "5.4 CSS")
     check("app js page modules", js, b["js_gzip_kb"] * kb, "5.4 App JS")
     check("engine incl. worker modules", engine, b["engine_gzip_kb"] * kb, "5.4 Engine")
@@ -464,8 +505,10 @@ def check_budget(site, files, assets_prefix, pages):
         failures.append(line)
     for path in pages:
         check(path, gz[path], b["html_gzip_kb"] * kb, "5.4 HTML per page")
-        check(f"{path} first view", gz[path] + css + js, b["first_view_gzip_kb"] * kb,
-              "5.4 first view, HTML+CSS+app JS")
+        shared = sum(js_files[rel] for rel in page_worker_modules(files[path].decode("utf-8", errors="replace"), path,
+                                                                    js_sources, assets_prefix))
+        check(f"{path} first view", gz[path] + css + js + shared, b["first_view_gzip_kb"] * kb,
+              "5.4 first view, HTML+CSS+app JS+page-imported worker modules")
     return report, failures
 
 
@@ -526,10 +569,24 @@ def build(root):
     pages.append("404.html")
 
     static = collect(root / "static", root, "static", names=True)
+    # Only listed files ship (decisions 40 and 42): site.json static_files plus verification_files. The licence texts
+    # under static/licencias/ keep their own name rule below.
+    listed = set(site.get("static_files", [])) | set(site.get("verification_files", []))
+    for name in site.get("verification_files", []):
+        if not ROOT_FILE_RE.fullmatch("/" + name):
+            raise BuildError(f"site.json verification file {name!r} must be a plain file name for the site root")
+        if name not in static:
+            raise BuildError(f"site.json verification file {name} is not in static/")
+    for name in sorted(site.get("static_files", [])):
+        if name not in static:
+            raise BuildError(f"site.json static_files entry {name} is not in static/")
     root_files = []
     for rel, data in static.items():
         if rel.lower() in STATIC_REFUSED:
             raise BuildError(f"static/{rel} is not allowed: it is generated or not part of the Design")
+        if rel not in listed and not rel.lower().startswith("licencias/"):
+            raise BuildError(f"static/{rel} is not in the allowlist: list it in site.json static_files "
+                             f"(or verification_files) or remove it")
         files[rel] = data
         if "/" not in rel:
             root_files.append("/" + rel)
@@ -543,12 +600,6 @@ def build(root):
     if "sitemap.xml" not in files:
         files["sitemap.xml"] = ("\n".join(sitemap) + "\n").encode("utf-8")
         root_files.append("/sitemap.xml")
-    for name in site.get("verification_files", []):
-        if not ROOT_FILE_RE.fullmatch("/" + name):
-            raise BuildError(f"site.json verification file {name!r} must be a plain file name for the site root")
-        if name not in static:
-            raise BuildError(f"site.json verification file {name} is not in static/")
-
     check_output_paths(files)
     for rel in static:
         if rel.lower().startswith("licencias/") and not LICENCE_FILE_RE.fullmatch("/" + rel):

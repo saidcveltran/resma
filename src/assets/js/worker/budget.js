@@ -3,8 +3,11 @@
 // the library really decodes: at run time, from our own code, the two parser factories it calls for those streams are
 // replaced by guarded ones (the vendored file is not touched). Each guard decodes the stream first with a byte cap, using the
 // library's own decoder, so a stream is never fully materialised past the cap; then it checks the header and, for an object
-// stream, meters how many bytes the library walks to parse each object. A cap passed is remembered on the load in progress
-// (the library swallows errors thrown while it parses an object) and withParseBudget() turns it into TOO_LARGE.
+// stream, meters how many bytes the library walks to parse each object. Outside object streams (the file's own objects and
+// its trailer) there is no decoded size to lean on, so the document parser's tokens are metered as they are read: a string,
+// hex string, name or number longer than the token cap stops at the cap, not after it is built. A cap passed is remembered on
+// the load in progress (the library swallows errors thrown while it parses an object) and withParseBudget() turns it into
+// TOO_LARGE. A header out of bounds is a damaged file, not a big one: it is remembered the same way and becomes DAMAGED.
 // Content and image streams are never decoded by the parser and are not counted.
 import { EngineError } from './errors.js';
 import { PARSE_STREAM_MAX_BYTES, PARSE_FILE_MAX_BYTES, PARSE_TOKEN_MAX_BYTES, PARSE_OBJECTS_MAX, PARSE_FILTERS_MAX } from '../config.js';
@@ -25,6 +28,12 @@ function trip(session, reason) {
   throw new EngineError('TOO_LARGE');
 }
 
+// A header that is out of bounds: the file is damaged. Remembered like a cap, because the library may swallow the error.
+function damage(session) {
+  session.damaged = true;
+  throw new EngineError('DAMAGED');
+}
+
 const inRange = (n, max) => Number.isSafeInteger(n) && n >= 0 && n <= max;
 
 // Decodes `rawStream` the way the library will (same filters, already decrypted), stopping as soon as a cap is passed.
@@ -33,10 +42,7 @@ function decodedSize(lib, rawStream, session) {
   const room = Math.min(session.limits.streamMax, session.limits.fileMax - session.decoded);
   // Real files use one or two filters; a longer chain is refused before anything is decoded.
   const filter = rawStream?.dict?.lookup?.(lib.PDFName.of('Filter'));
-  if (typeof filter?.size === 'function' && filter.size() > PARSE_FILTERS_MAX) {
-    session.damaged = true; // remembered like a cap: the library may swallow the error
-    throw new EngineError('DAMAGED');
-  }
+  if (typeof filter?.size === 'function' && filter.size() > PARSE_FILTERS_MAX) damage(session);
   const stream = lib.decodePDFRawStream(rawStream);
   // Every decoder of the chain asks for its buffer before it writes past it: refuse the growth beyond the cap. The walk has
   // no hop limit (it ends when there is no inner stream); a visited set stops a cycle.
@@ -73,13 +79,13 @@ function guardObjectStreams(lib, original) {
     const size = decodedSize(lib, rawStream, session);
     session.objectStreams++;
     const parser = original.call(this, rawStream, ...rest);
-    if (!inRange(parser.objectCount, objectsMax) || !inRange(parser.firstOffset, size)) trip(session, 'header');
+    if (!inRange(parser.objectCount, objectsMax) || !inRange(parser.firstOffset, size)) damage(session);
     const readHeader = parser.parseOffsetsAndObjectNumbers;
     parser.parseOffsetsAndObjectNumbers = function parseOffsetsAndObjectNumbers() {
       const entries = readHeader.call(this);
       let previous = -1;
       for (const { offset } of entries) {
-        if (!Number.isSafeInteger(offset) || offset <= previous || parser.firstOffset + offset >= size) trip(session, 'header');
+        if (!Number.isSafeInteger(offset) || offset <= previous || parser.firstOffset + offset >= size) damage(session);
         previous = offset;
       }
       return entries;
@@ -123,7 +129,44 @@ function guardXrefStreams(lib, original) {
     const parser = original.call(this, rawStream, ...rest);
     let entries = 0;
     for (const { length } of Array.isArray(parser.subsections) ? parser.subsections : [{ length: NaN }]) entries += length;
-    if (!inRange(entries, session.limits.objectsMax)) trip(session, 'header');
+    if (!inRange(entries, session.limits.objectsMax)) damage(session);
+    return parser;
+  };
+}
+
+// The document parser (the file's own objects and its trailer, outside any object stream). Every method that builds a token one
+// character at a time is wrapped to note where its token starts, and bytes.next() refuses a token that has grown past the cap.
+// Streams are not tokens: their bytes are skipped by length or found by the library's end-of-stream scan, and are not metered.
+// Once a cap is passed every further read fails at once, so the library's recovery scans cannot walk the rest of the file.
+const TOKEN_METHODS = ['parseRawInt', 'parseRawNumber', 'parseString', 'parseHexString', 'parseName'];
+
+function guardDocumentParsers(lib, original) {
+  return function forBytes(...args) {
+    const session = active ?? newSession(DEFAULT_LIMITS);
+    const parser = original.apply(this, args);
+    const { tokenMax } = session.limits;
+    const bytes = parser?.bytes;
+    if (typeof bytes?.next !== 'function' || typeof bytes.offset !== 'function') throw new EngineError('INTERNAL');
+    const next = bytes.next;
+    let from = -1; // where the token being read started; -1 between tokens
+    bytes.next = function guardedNext() {
+      if (session.tripped !== null) throw new EngineError('TOO_LARGE');
+      if (from >= 0 && this.offset() - from > tokenMax) trip(session, 'token');
+      return next.call(this);
+    };
+    for (const name of TOKEN_METHODS) {
+      const method = parser[name];
+      if (typeof method !== 'function') throw new EngineError('INTERNAL');
+      parser[name] = function guardedToken(...rest) {
+        const outer = from;
+        from = this.bytes.offset();
+        try {
+          return method.apply(this, rest);
+        } finally {
+          from = outer;
+        }
+      };
+    }
     return parser;
   };
 }
@@ -135,25 +178,29 @@ function isGuarded(fn) {
 // Installs the guards on the library's classes. Idempotent. Throws INTERNAL if the library does not offer what the guards
 // need, or if a guard could not be put in place: a load must never run without the budget.
 export function installParseBudget(lib) {
-  const objectStreams = lib?.PDFObjectStreamParser;
-  const xrefStreams = lib?.PDFXRefStreamParser;
-  if (typeof objectStreams?.forStream !== 'function' || typeof xrefStreams?.forStream !== 'function'
+  const places = [
+    [lib?.PDFObjectStreamParser, 'forStream', guardObjectStreams],
+    [lib?.PDFXRefStreamParser, 'forStream', guardXrefStreams],
+    [lib?.PDFParser, 'forBytesWithOptions', guardDocumentParsers],
+  ];
+  if (places.some(([owner, key]) => typeof owner?.[key] !== 'function')
     || typeof lib.decodePDFRawStream !== 'function' || typeof lib.PDFName?.of !== 'function') throw new EngineError('INTERNAL');
   try {
-    for (const [owner, make] of [[objectStreams, guardObjectStreams], [xrefStreams, guardXrefStreams]]) {
-      if (isGuarded(owner.forStream)) continue;
-      const guarded = make(lib, owner.forStream);
+    for (const [owner, key, make] of places) {
+      if (isGuarded(owner[key])) continue;
+      const guarded = make(lib, owner[key]);
       Object.defineProperty(guarded, GUARDED, { value: true });
-      owner.forStream = guarded;
+      owner[key] = guarded;
     }
   } catch {
     throw new EngineError('INTERNAL');
   }
-  if (!isGuarded(objectStreams.forStream) || !isGuarded(xrefStreams.forStream)) throw new EngineError('INTERNAL');
+  if (!places.every(([owner, key]) => isGuarded(owner[key]))) throw new EngineError('INTERNAL');
 }
 
 // Runs `work` (a library load) under the budget. Resolves to { value, usage }. A cap passed anywhere in the load is
-// TOO_LARGE with the file index, and a /Filter chain past the limit is DAMAGED with it, whatever else the library did. Loads do not overlap.
+// TOO_LARGE with the file index; a /Filter chain past the limit or a header out of bounds is DAMAGED with it, whatever else the
+// library did. Loads do not overlap.
 export async function withParseBudget(lib, work, index, limits = DEFAULT_LIMITS) {
   installParseBudget(lib);
   if (active !== null) throw new EngineError('INTERNAL', index);

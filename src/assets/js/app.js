@@ -49,7 +49,7 @@ function boot() {
   if (!status) return; // pages without a tool (home, not found, text pages) start no engine
   const alertRegion = document.querySelector('[data-alert]');
   const retry = document.querySelector('[data-engine-retry]');
-  if (typeof Worker === 'undefined') {
+  if (typeof Worker === 'undefined' || typeof DecompressionStream !== 'function') { // the PNG path needs it in the worker
     root.dataset.engine = 'unsupported';
     showAlert(alertRegion, t('common.unsupportedBrowser'));
     return;
