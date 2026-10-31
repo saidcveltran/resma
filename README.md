@@ -16,7 +16,7 @@ resma is a free, open-source set of PDF tools that run entirely in your browser:
 | --- | --- | --- |
 | ![Three PDFs added](media/resma-shot-02-unir-files-desktop-light-1280x800.png) | ![Merged PDF ready to download](media/resma-shot-03-unir-result-desktop-light-1280x800.png) | ![Three PDFs added on a phone](media/resma-shot-05-unir-files-phone-light-520x1040.png) |
 
-![JPG a PDF with three images added](media/resma-shot-07-jpg-files-desktop-light-1280x800.png)
+![JPG a PDF with three images added and the options open](media/resma-shot-07-jpg-files-desktop-light-1280x800.png)
 
 ## How it works
 
