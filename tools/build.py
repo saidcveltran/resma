@@ -59,7 +59,7 @@ IMPORT_RE = re.compile(r"(?:^|[;}])[ \t]*(?:import\s*(?:[^;'\"]*?\bfrom\s*)?"
 LICENCE_FILE_RE = re.compile(r"/licencias/[A-Za-z0-9][A-Za-z0-9._-]*\.txt")  # the licence texts under /licencias/
 BASE_URL_RE = re.compile(r"https://[a-z0-9.-]+")
 REPARSE_POINT = 0x400  # Windows FILE_ATTRIBUTE_REPARSE_POINT: symlinks, junctions, mount points
-STATIC_REFUSED = ("_redirects", "_headers", "build-manifest.json")
+STATIC_REFUSED = ("_redirects", "_headers", "build-manifest.json", "sitemap.xml")
 ENGINE_PREFIXES = ("vendor/", "js/worker/")  # the engine class of the budget (DESIGN 5.4): loaded by the worker, not App JS
 BUDGET_KEYS = ("css_gzip_kb", "js_gzip_kb", "engine_gzip_kb", "fonts_max_files", "fonts_total_kb",
                "html_gzip_kb", "first_view_gzip_kb")
