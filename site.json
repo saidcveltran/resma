@@ -1,6 +1,6 @@
 {
   "base_url": "https://resma.aiskaron.com",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "node_major": 24,
   "budget": {
     "html_gzip_kb": 15,
