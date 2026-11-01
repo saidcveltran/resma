@@ -11,7 +11,7 @@
 <div class="container">
 <article class="prose">
 <h1>{{h1}}</h1>
-<p class="updated">Última actualización: <time datetime="2026-11-01">1 de noviembre de 2026</time></p>
+<p class="updated">Última actualización: <time datetime="2026-11-02">2 de noviembre de 2026</time></p>
 <p class="lead"><strong>Tus archivos no salen de tu dispositivo.</strong> resma une y convierte los archivos dentro de tu navegador: no los recibe, no los ve y no los guarda. Aun así, como cualquier web, al visitarla se generan algunos datos técnicos, y si escribes un correo, ese correo se recibe. Esta página explica esos dos casos.</p>
 <p>Este texto es informativo y puede actualizarse. La fecha de la última actualización figura arriba.</p>
 
@@ -22,13 +22,15 @@
 <ul>
 <li>Los PDF e imágenes que eliges se leen y se procesan en la memoria de tu dispositivo. El resultado se crea también ahí y lo descargas tú.</li>
 <li>El código de resma no envía tus archivos a ningún sitio, y la página indica al navegador que bloquee las conexiones que sirven para subir datos, también hacia el propio sitio. Puedes comprobarlo tú mismo: se explica en <a href="/como-funciona/">Cómo funciona</a>.</li>
-<li>Al cerrar o recargar la página, los archivos desaparecen de la memoria del navegador. resma no guarda nada propio en tu dispositivo; tu navegador solo conserva en su caché normal los archivos de la propia página (más detalle en la <a href="/cookies/">política de cookies</a>).</li>
+<li>Al cerrar o recargar la página, los archivos desaparecen de la memoria del navegador. resma no guarda nada propio en tu dispositivo; tu navegador solo conserva en su caché normal los archivos de la propia página y la instrucción técnica de Cloudflare explicada en el apartado 3 (más detalle en la <a href="/cookies/">política de cookies</a>).</li>
 </ul>
 <p>Por eso el responsable no trata el contenido de tus archivos. Esto no cambia lo que se explica en los apartados siguientes.</p>
 
 <h2>3. Registros técnicos del alojamiento</h2>
 <ul>
 <li><strong>Qué datos:</strong> al pedir una página, Cloudflare, que aloja resma y lo sirve, trata datos técnicos de la petición, como la dirección IP, el tipo de navegador (agente de usuario), la dirección pedida y la hora, y la página desde la que llegas si tu navegador la envía. Estas peticiones son solo para descargar las páginas y su código; no contienen tus archivos.</li>
+<li><strong>Informes de errores de red:</strong> Cloudflare añade a sus respuestas dos cabeceras técnicas («NEL» y «Report-To») que indican a tu navegador que, solo si una petición a este sitio falla (por ejemplo, porque no logra conectar), envíe un informe del fallo a Cloudflare. Si la petición sale bien, no se envía nada. Sirven para detectar problemas de conexión de los visitantes.</li>
+<li><strong>Qué contienen esos informes:</strong> según la documentación de Cloudflare, el informe incluye el tipo de error y la fase en que ocurrió, la dirección que falló, la página de la que vienes si tu navegador la envía, el tiempo transcurrido y el protocolo. Cloudflare recibe además tu dirección IP al llegar el informe: la usa para obtener tu país, tu área metropolitana y tu red (ASN) y no la registra, porque la conserva en memoria solo los milisegundos que dura el proceso. Los datos de estos informes que Cloudflare ofrece al responsable son la red y el país, el centro de datos, la fase, el tipo de error y la hora. Según Cloudflare, los informes no se comparten con terceros. Ningún archivo que procesas en resma forma parte de ellos. Tu navegador guarda la instrucción unos 7 días y la elimina si borras los datos del sitio. Cloudflare no publica cuánto tiempo conserva los datos ya procesados.</li>
 <li><strong>Para qué:</strong> servir el sitio, protegerlo frente a abusos y ataques y mantenerlo disponible. El responsable consulta además, de vez en cuando, las cifras agregadas de visitas que muestra el panel de Cloudflare (por ejemplo, cuántas peticiones hubo en un mes), sin identificar a nadie.</li>
 <li><strong>Obligación de facilitarlos:</strong> se generan automáticamente al visitar el sitio; sin ellos no es posible servir la página.</li>
 <li><strong>Base jurídica:</strong> interés legítimo en ofrecer el sitio de forma segura y en saber si se usa (artículo 6.1 f del RGPD). Puedes oponerte (apartado 7).</li>

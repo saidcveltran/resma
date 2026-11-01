@@ -4,6 +4,13 @@ All notable changes to resma are written here, newest first. The format follows 
 
 ## [Unreleased]
 
+## [v0.1.1] - 2026-11-02
+
+### Changed
+
+- The privacy, cookies and how-it-works pages now explain the network error reports that Cloudflare asks the browser to send when a request to the site fails, and the instruction the browser keeps for about 7 days.
+- The README no longer says the access log is the only server-side record, and says what the browser keeps.
+
 ## [v0.1.0] - 2026-11-01
 
 First release.

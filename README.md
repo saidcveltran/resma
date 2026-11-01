@@ -20,7 +20,7 @@ resma is a free, open-source set of PDF tools that run entirely in your browser:
 
 ## How it works
 
-The site is a set of static pages. The PDF work happens in a web worker inside your browser, so nothing is uploaded and the tools keep working when you disconnect from the internet after the page has loaded. The site sets no cookies and stores nothing on your device. The only server-side record is the technical access log of the host that serves the pages, which the privacy page describes.
+The site is a set of static pages. The PDF work happens in a web worker inside your browser, so nothing is uploaded and the tools keep working when you disconnect from the internet after the page has loaded. The site sets no cookies and stores nothing of its own on your device; besides its ordinary cache, the browser keeps Cloudflare's network-error instruction described on the privacy page. The server-side records are the technical access log of the host that serves the pages and, only when a request to the site fails, a network error report that the visitor's browser sends to Cloudflare; the privacy page describes both.
 
 ## Build
 
