@@ -10,6 +10,8 @@ All notable changes to resma are written here, newest first. The format follows 
 
 - The privacy, cookies and how-it-works pages now explain the network error reports that Cloudflare asks the browser to send when a request to the site fails, and the instruction the browser keeps for about 7 days.
 - The README no longer says the access log is the only server-side record, and says what the browser keeps.
+- The project's own images now carry the AIskaron rights notice in their metadata; the pixels are unchanged, and the interface icons are excluded.
+- The licences page now credits Feather Icons (MIT), because several interface icons coincide with its shapes, and publishes its full licence text.
 
 ## [v0.1.0] - 2026-11-01
 
