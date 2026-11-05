@@ -4,7 +4,7 @@ All notable changes to resma are written here, newest first. The format follows 
 
 ## [Unreleased]
 
-## [v0.1.1] - 2026-11-02
+## [v0.1.1] - 2026-11-05
 
 ### Changed
 
